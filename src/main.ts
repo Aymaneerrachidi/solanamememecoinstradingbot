@@ -74,7 +74,6 @@ async function main() {
       const buys = polled.filter((b) => b.ts >= cutoff);
       if (buys.length > 0) {
         const res = await processBuys(db, buys, {
-          thresholds: config.safety,
           signalLevels: config.signalLevels,
           individualBuyTiers: config.individualBuyTiers,
           checkToken: checkTokenBound,

@@ -23,7 +23,7 @@ const info: DexData = {
 const safety: SafetyResult = {
   pass: true, failedGates: [],
   stats: {
-    liquidityUsd: 50000, lpBurnedOrLocked: true, mintAuthorityRevoked: true,
+    marketCapUsd: 200000, liquidityUsd: 50000, lpBurnedOrLocked: true, mintAuthorityRevoked: true,
     freezeAuthorityRevoked: true, top10HolderPct: 20, volume24hUsd: 80000,
     ageMinutes: 45, holderCount: 300,
   },

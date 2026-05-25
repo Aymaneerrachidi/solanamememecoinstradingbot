@@ -1,6 +1,5 @@
 import type { DB } from "./storage/db.js";
 import type { BuyEvent, SafetyResult, Tier } from "./types.js";
-import type { SafetyThresholds } from "./safety/evaluate.js";
 import { countDistinctByTier, distinctCount } from "./engine/confluenceEngine.js";
 import { detectSignalLevel, type SignalLevel } from "./engine/signalLevels.js";
 import { recordBuy, getBuysForTokenSince, countBuysByWalletToken } from "./storage/buyStore.js";
@@ -12,7 +11,6 @@ import type { DexData } from "./safety/dexscreener.js";
 import { logger } from "./logger.js";
 
 export interface PipelineDeps {
-  thresholds: SafetyThresholds;
   signalLevels: SignalLevel[];
   individualBuyTiers: Set<Tier>; // tiers that notify on every buy ("" = ladder-only)
   checkToken: (mint: string) => Promise<SafetyResult>;

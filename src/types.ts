@@ -19,6 +19,7 @@ export interface BuyEvent {
 }
 
 export interface SafetyStats {
+  marketCapUsd: number;
   liquidityUsd: number;
   lpBurnedOrLocked: boolean;
   mintAuthorityRevoked: boolean;

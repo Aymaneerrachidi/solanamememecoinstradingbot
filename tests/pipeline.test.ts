@@ -6,11 +6,6 @@ import type { BuyEvent, KolRecord, SafetyResult } from "../src/types.js";
 import type { DexData } from "../src/safety/dexscreener.js";
 import type { SignalLevel } from "../src/engine/signalLevels.js";
 
-const thresholds = {
-  minLiquidityUsd: 10000, maxTop10Pct: 30, minVolume24hUsd: 20000,
-  minAgeMinutes: 5, maxAgeMinutes: 4320, minHolders: 10,
-};
-
 const signalLevels: SignalLevel[] = [
   { level: 1, label: "🟢 GOOD", minKols: 2, windowMin: 5 },
   { level: 2, label: "🔴 EXTREME", minKols: 3, windowMin: 5 },
@@ -18,7 +13,7 @@ const signalLevels: SignalLevel[] = [
 
 const passSafety: SafetyResult = {
   pass: true, failedGates: [],
-  stats: { liquidityUsd: 50000, lpBurnedOrLocked: true, mintAuthorityRevoked: true, freezeAuthorityRevoked: true, top10HolderPct: 20, volume24hUsd: 80000, ageMinutes: 45, holderCount: 300 },
+  stats: { marketCapUsd: 200000, liquidityUsd: 50000, lpBurnedOrLocked: true, mintAuthorityRevoked: true, freezeAuthorityRevoked: true, top10HolderPct: 20, volume24hUsd: 80000, ageMinutes: 45, holderCount: 300 },
 };
 
 const dexInfo: DexData = {
@@ -43,7 +38,7 @@ function deps(
   check: () => Promise<SafetyResult>,
   individualBuyTiers: Set<"S" | "A" | "B"> = new Set(["S", "A", "B"])
 ): PipelineDeps {
-  return { thresholds, signalLevels, individualBuyTiers, checkToken: check, tokenInfo: async () => dexInfo, tg: { send } };
+  return { signalLevels, individualBuyTiers, checkToken: check, tokenInfo: async () => dexInfo, tg: { send } };
 }
 
 function buy(wallet: string, tier: "S" | "A" | "B", sig: string, mint = "MINT", ts = Date.now()): BuyEvent {

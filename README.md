@@ -8,13 +8,16 @@ tokens, runs strict anti-rug / anti-dead-coin safety gates, and sends Telegram a
 
 1. **Scrape** — pulls the kolscan leaderboard (or a manual list), classifies KOLs into
    tiers **S / A / B** by PnL rank.
-2. **Monitor** — polls each tracked wallet via Helius for SWAP buys of SPL tokens.
-3. **Confluence** — fires a *candidate* when enough distinct KOLs buy the same token within
-   the window (default: 1 S-tier, OR 2 A-tier, OR 3 B-tier; tiers are cumulative).
-4. **Safety gates** — a candidate must pass ALL of: minimum liquidity + LP locked/burned,
-   mint & freeze authority revoked, holder concentration under a cap, and minimum
-   volume / age / holders (also rejects stale "dead" coins). Fail-closed: missing data ⇒ reject.
-5. **Alert** — sends a Telegram message with the token, KOLs in, tiers, and safety stats.
+2. **Monitor** — polls each tracked wallet via Helius (standard RPC) for token buys.
+3. **Signal ladder** — fires the strongest level a coin qualifies for, based on how many
+   distinct KOLs buy it within a window (default: 🟢 2/5min, 🔵 4/15min, 🟠 4/5min,
+   🔴 6/15min). A coin re-alerts as it climbs to a higher level.
+4. **Safety (lean)** — a signal must pass: market cap ≥ `MIN_MARKET_CAP_USD` (and ≤
+   `MAX_MARKET_CAP_USD` if set) **and** the three anti-rug checks (LP locked/burned, mint
+   authority revoked, freeze authority revoked). Fail-closed: missing data ⇒ reject.
+5. **Alert** — Telegram message with token symbol/name, market cap, the KOLs (+ranks), the
+   safety snapshot, and a tap-to-copy contract address.
+   Individual per-buy pings are opt-in via `INDIVIDUAL_BUY_TIERS` (default off).
 
 ## Setup
 

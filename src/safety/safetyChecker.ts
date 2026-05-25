@@ -14,7 +14,7 @@ const FAIL_CLOSED: SafetyResult = {
   pass: false,
   failedGates: ["dataUnavailable"],
   stats: {
-    liquidityUsd: 0, lpBurnedOrLocked: false, mintAuthorityRevoked: false,
+    marketCapUsd: 0, liquidityUsd: 0, lpBurnedOrLocked: false, mintAuthorityRevoked: false,
     freezeAuthorityRevoked: false, top10HolderPct: 100, volume24hUsd: 0,
     ageMinutes: 0, holderCount: 0,
   },
@@ -31,6 +31,7 @@ export async function checkToken(
 
     return evaluateSafety(
       {
+        marketCapUsd: dex.marketCapUsd ?? 0,
         liquidityUsd: dex.liquidityUsd,
         volume24hUsd: dex.volume24hUsd,
         ageMinutes: dex.ageMinutes,

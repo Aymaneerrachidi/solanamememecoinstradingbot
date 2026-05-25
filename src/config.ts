@@ -53,12 +53,8 @@ export const config = {
   buyLookbackMin: num("BUY_LOOKBACK_MIN", 10),
   scrapeIntervalHours: num("SCRAPE_INTERVAL_HOURS", 24),
   safety: {
-    minLiquidityUsd: num("MIN_LIQUIDITY_USD", 10000),
-    maxTop10Pct: num("MAX_TOP10_HOLDER_PCT", 30),
-    minVolume24hUsd: num("MIN_VOLUME_24H_USD", 20000),
-    minAgeMinutes: num("MIN_AGE_MINUTES", 5),
-    maxAgeMinutes: num("MAX_AGE_MINUTES", 4320),
-    minHolders: num("MIN_HOLDERS", 100),
+    minMarketCapUsd: num("MIN_MARKET_CAP_USD", 10000),
+    maxMarketCapUsd: num("MAX_MARKET_CAP_USD", 0), // 0 = no upper cap
   },
 };
 
