@@ -27,6 +27,12 @@ describe("parseBuysFromTx", () => {
     expect(parseBuysFromTx(wsolTx, "myWallet", "A")).toHaveLength(0);
   });
 
+  it("ignores stablecoin (USDC) inflows (likely a sell, not a buy)", () => {
+    const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+    const usdcTx = { ...tx, tokenTransfers: [{ toUserAccount: "myWallet", mint: USDC, tokenAmount: 100 }] };
+    expect(parseBuysFromTx(usdcTx, "myWallet", "A")).toHaveLength(0);
+  });
+
   it("ignores transfers to other wallets", () => {
     expect(parseBuysFromTx(tx, "notMyWallet", "B")).toHaveLength(0);
   });

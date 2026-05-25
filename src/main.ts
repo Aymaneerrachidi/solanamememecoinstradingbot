@@ -53,38 +53,41 @@ async function main() {
       chain: (m) => fetchOnchainData(conn, m),
     });
 
+  // Only react to buys that happen after startup, so we don't replay history on launch.
+  const startedAt = Date.now();
   logger.info("monitor loop started");
   let cycle = 0;
   let totalBuys = 0;
-  let totalAlerts = 0;
+  let totalStrong = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     cycle++;
     const walletCount = getWallets().length;
     let buyCount = 0;
-    let newAlerts = 0;
+    let strongCount = 0;
     try {
-      const buys = await monitor.poll();
-      buyCount = buys.length;
-      totalBuys += buyCount;
+      const polled = await monitor.poll();
+      const buys = polled.filter((b) => b.ts >= startedAt);
       if (buys.length > 0) {
-        const alerted = await processBuys(db, buys, {
+        const res = await processBuys(db, buys, {
           thresholds: config.safety,
           confluence: config.confluence,
           checkToken: checkTokenBound,
           tg,
         });
-        newAlerts = alerted.length;
-        totalAlerts += newAlerts;
-        for (const mint of alerted) logger.info(`🚨 ALERT SENT: ${mint}`);
+        buyCount = res.buysSent;
+        totalBuys += buyCount;
+        strongCount = res.strongSent.length;
+        totalStrong += strongCount;
+        for (const mint of res.strongSent) logger.info(`🚀 STRONG SIGNAL SENT: ${mint}`);
       }
     } catch (err) {
       logger.error("monitor loop error", err);
     }
     logger.info(
       `cycle ${cycle} | watching ${walletCount} wallets | ` +
-        `${buyCount} buys this poll (${totalBuys} total) | ` +
-        `${newAlerts} new alerts (${totalAlerts} total) | next poll in ${config.monitorIntervalSec}s`
+        `${buyCount} new buys (${totalBuys} total) | ` +
+        `${strongCount} strong (${totalStrong} total) | next poll in ${config.monitorIntervalSec}s`
     );
     await sleep(config.monitorIntervalSec * 1000);
   }

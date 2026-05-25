@@ -1,12 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
-import { formatAlert, dispatchAlert } from "../../src/alert/alertDispatcher.js";
+import {
+  formatBuy,
+  formatStrongAlert,
+  dispatchStrong,
+  type KolView,
+} from "../../src/alert/alertDispatcher.js";
 import { openDb } from "../../src/storage/db.js";
-import type { BuyEvent, SafetyResult } from "../../src/types.js";
+import type { SafetyResult } from "../../src/types.js";
 
-const buys: BuyEvent[] = [
-  { kolWallet: "wAAA", tier: "S", tokenMint: "MINT123", ts: 0, signature: "s1" },
-  { kolWallet: "wBBB", tier: "A", tokenMint: "MINT123", ts: 0, signature: "s2" },
-];
+const cented: KolView = { name: "Cented", rank: 1, tier: "S" };
+const doji: KolView = { name: "Doji", rank: 12, tier: "A" };
 
 const safety: SafetyResult = {
   pass: true,
@@ -18,25 +21,36 @@ const safety: SafetyResult = {
   },
 };
 
-describe("formatAlert", () => {
-  it("includes token, KOL count, tiers, and key stats", () => {
-    const msg = formatAlert("MINT123", buys, safety);
+describe("formatBuy", () => {
+  it("shows the KOL name, rank, tier, and token", () => {
+    const msg = formatBuy("MINT123", cented);
+    expect(msg).toContain("Cented");
+    expect(msg).toContain("#1");
+    expect(msg).toContain("S-tier");
     expect(msg).toContain("MINT123");
-    expect(msg).toContain("2 KOL");
-    expect(msg).toContain("S");
     expect(msg).toContain("dexscreener.com");
+  });
+});
+
+describe("formatStrongAlert", () => {
+  it("lists all KOLs with ranks, the label, and key stats", () => {
+    const msg = formatStrongAlert("MINT123", [cented, doji], "1 S + 1 A", safety);
+    expect(msg).toContain("STRONG");
+    expect(msg).toContain("1 S + 1 A");
+    expect(msg).toContain("Cented (#1 S)");
+    expect(msg).toContain("Doji (#12 A)");
     expect(msg).toContain("$50,000");
   });
 });
 
-describe("dispatchAlert", () => {
+describe("dispatchStrong", () => {
   it("sends once and dedups the second time", async () => {
     const db = openDb(":memory:");
     const send = vi.fn(async () => {});
     const tg = { send };
 
-    const first = await dispatchAlert(db, tg, "MINT123", buys, safety);
-    const second = await dispatchAlert(db, tg, "MINT123", buys, safety);
+    const first = await dispatchStrong(db, tg, "MINT123", [cented, doji], "1 S + 1 A", safety);
+    const second = await dispatchStrong(db, tg, "MINT123", [cented, doji], "1 S + 1 A", safety);
 
     expect(first).toBe(true);
     expect(second).toBe(false);

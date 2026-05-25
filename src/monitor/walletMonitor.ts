@@ -2,7 +2,13 @@ import { retry } from "../util/retry.js";
 import { logger } from "../logger.js";
 import type { BuyEvent, Tier } from "../types.js";
 
-const WSOL = "So11111111111111111111111111111111111111112";
+// Tokens that don't represent a memecoin "buy" — receiving these usually means the KOL
+// SOLD a token (got SOL/stablecoins back), so they must not count as buys.
+const EXCLUDED_MINTS = new Set([
+  "So11111111111111111111111111111111111111112", // Wrapped SOL
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
+]);
 
 export interface HeliusTx {
   signature: string;
@@ -14,7 +20,7 @@ export function parseBuysFromTx(tx: HeliusTx, wallet: string, tier: Tier): BuyEv
   const transfers = tx.tokenTransfers ?? [];
   const buys: BuyEvent[] = [];
   for (const t of transfers) {
-    if (t.toUserAccount === wallet && t.mint && t.mint !== WSOL) {
+    if (t.toUserAccount === wallet && t.mint && !EXCLUDED_MINTS.has(t.mint)) {
       buys.push({
         kolWallet: wallet,
         tier,
