@@ -1,3 +1,5 @@
+import type { Tier } from "./types.js";
+
 function num(name: string, def: number): number {
   const v = process.env[name];
   return v === undefined || v === "" ? def : Number(v);
@@ -5,6 +7,15 @@ function num(name: string, def: number): number {
 
 function str(name: string, def = ""): string {
   return process.env[name] ?? def;
+}
+
+// Parse a comma-separated tier list (e.g. "S,A") into a Set. Empty = no tiers.
+function tierSet(name: string): Set<Tier> {
+  const s = new Set<Tier>();
+  for (const part of str(name).split(",").map((x) => x.trim().toUpperCase())) {
+    if (part === "S" || part === "A" || part === "B") s.add(part);
+  }
+  return s;
 }
 
 export const config = {
@@ -32,6 +43,9 @@ export const config = {
     { level: 3, label: "🟠 VERY STRONG", minKols: 4, windowMin: 5 },
     { level: 4, label: "🔴 EXTREME", minKols: 6, windowMin: 15 },
   ],
+  // Which tiers send a message on EVERY individual buy. Blank = off (only ladder signals).
+  // e.g. "S" = ping only on top-tier whale buys; "S,A,B" = every buy.
+  individualBuyTiers: tierSet("INDIVIDUAL_BUY_TIERS"),
   monitorIntervalSec: num("MONITOR_INTERVAL_SEC", 8),
   // Gap between per-wallet Helius requests to stay under the free-tier rate limit.
   monitorRequestGapMs: num("MONITOR_REQUEST_GAP_MS", 150),

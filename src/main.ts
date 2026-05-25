@@ -76,11 +76,12 @@ async function main() {
         const res = await processBuys(db, buys, {
           thresholds: config.safety,
           signalLevels: config.signalLevels,
+          individualBuyTiers: config.individualBuyTiers,
           checkToken: checkTokenBound,
           tokenInfo: (m) => fetchDexData(m),
           tg,
         });
-        buyCount = res.buysSent;
+        buyCount = res.buysSeen;
         totalBuys += buyCount;
         signalCount = res.signalsSent.length;
         totalSignals += signalCount;
@@ -91,7 +92,7 @@ async function main() {
     }
     logger.info(
       `cycle ${cycle} | watching ${walletCount} wallets | ` +
-        `${buyCount} new buys (${totalBuys} total) | ` +
+        `${buyCount} buys seen (${totalBuys} total) | ` +
         `${signalCount} signals (${totalSignals} total) | next poll in ${config.monitorIntervalSec}s`
     );
     await sleep(config.monitorIntervalSec * 1000);

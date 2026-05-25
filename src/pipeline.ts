@@ -14,13 +14,15 @@ import { logger } from "./logger.js";
 export interface PipelineDeps {
   thresholds: SafetyThresholds;
   signalLevels: SignalLevel[];
+  individualBuyTiers: Set<Tier>; // tiers that notify on every buy ("" = ladder-only)
   checkToken: (mint: string) => Promise<SafetyResult>;
   tokenInfo: (mint: string) => Promise<DexData>;
   tg: TelegramClient;
 }
 
 export interface PipelineResult {
-  buysSent: number;
+  buysSeen: number; // distinct new buys recorded (regardless of notification)
+  buysSent: number; // individual-buy messages actually sent
   signalsSent: string[]; // "mint#level" keys that fired
 }
 
@@ -44,13 +46,17 @@ export async function processBuys(
   deps: PipelineDeps
 ): Promise<PipelineResult> {
   const signalsSent: string[] = [];
+  let buysSeen = 0;
   let buysSent = 0;
   const candidates = new Set<string>();
 
-  // 1) Record every new buy; notify only the FIRST time a KOL buys a given token.
+  // 1) Record every new buy. Optionally notify on the FIRST time a KOL buys a given token,
+  //    but only for the tiers configured in `individualBuyTiers` (blank = ladder-only).
   for (const b of buys) {
     if (!recordBuy(db, b)) continue; // dedup by signature
     candidates.add(b.tokenMint);
+    buysSeen++;
+    if (!deps.individualBuyTiers.has(b.tier)) continue;
     if (countBuysByWalletToken(db, b.kolWallet, b.tokenMint) > 1) continue;
     const info = await deps.tokenInfo(b.tokenMint);
     await dispatchBuy(deps.tg, b.tokenMint, kolView(db, b), info);
@@ -85,5 +91,5 @@ export async function processBuys(
     if (sent) signalsSent.push(`${mint}#${level.level}`);
   }
 
-  return { buysSent, signalsSent };
+  return { buysSeen, buysSent, signalsSent };
 }

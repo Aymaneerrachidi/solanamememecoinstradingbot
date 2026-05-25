@@ -38,8 +38,12 @@ function seed() {
   return db;
 }
 
-function deps(send: () => Promise<void>, check: () => Promise<SafetyResult>): PipelineDeps {
-  return { thresholds, signalLevels, checkToken: check, tokenInfo: async () => dexInfo, tg: { send } };
+function deps(
+  send: () => Promise<void>,
+  check: () => Promise<SafetyResult>,
+  individualBuyTiers: Set<"S" | "A" | "B"> = new Set(["S", "A", "B"])
+): PipelineDeps {
+  return { thresholds, signalLevels, individualBuyTiers, checkToken: check, tokenInfo: async () => dexInfo, tg: { send } };
 }
 
 function buy(wallet: string, tier: "S" | "A" | "B", sig: string, mint = "MINT", ts = Date.now()): BuyEvent {
@@ -68,6 +72,18 @@ describe("processBuys", () => {
       deps(send, async () => passSafety)
     );
     expect(r.buysSent).toBe(1);
+  });
+
+  it("ladder-only mode (no individual tiers): no buy messages, but signals still fire", async () => {
+    const db = seed();
+    const send = vi.fn(async () => {});
+    const ladderOnly = deps(send, async () => passSafety, new Set());
+
+    const r = await processBuys(db, [buy("w1", "S", "sig1"), buy("w2", "A", "sig2")], ladderOnly);
+    expect(r.buysSeen).toBe(2); // both recorded
+    expect(r.buysSent).toBe(0); // but no individual-buy messages
+    expect(r.signalsSent).toEqual(["MINT#1"]); // GOOD signal still fires
+    expect(send).toHaveBeenCalledTimes(1); // only the signal message
   });
 
   it("a single KOL buy notifies but fires no signal", async () => {
