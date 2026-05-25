@@ -49,6 +49,22 @@ describe("processBuys", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it("notifies only once when the same KOL buys the same token multiple times", async () => {
+    const db = seed();
+    const send = vi.fn(async () => {});
+    const check = vi.fn(async () => passSafety);
+    const deps = { thresholds, confluence, checkToken: check, tg: { send } };
+
+    // Same wallet (w1) buys the same MINT in 3 separate transactions.
+    const r = await processBuys(
+      db,
+      [buy("w1", "S", "sig1"), buy("w1", "S", "sig2"), buy("w1", "S", "sig3")],
+      deps
+    );
+    expect(r.buysSent).toBe(1); // only the first buy notifies
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("a single S-tier buy notifies but does NOT fire a strong alert", async () => {
     const db = seed();
     const send = vi.fn(async () => {});

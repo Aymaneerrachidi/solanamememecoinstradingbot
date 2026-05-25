@@ -8,7 +8,7 @@ import {
   summarizeTiers,
   type ConfluenceThresholds,
 } from "./engine/confluenceEngine.js";
-import { recordBuy, getBuysForTokenSince } from "./storage/buyStore.js";
+import { recordBuy, getBuysForTokenSince, countBuysByWalletToken } from "./storage/buyStore.js";
 import { alreadyAlerted } from "./storage/alertStore.js";
 import { getKol } from "./storage/kolStore.js";
 import { dispatchBuy, dispatchStrong, type KolView } from "./alert/alertDispatcher.js";
@@ -44,10 +44,12 @@ export async function processBuys(
   let buysSent = 0;
   const candidates = new Set<string>();
 
-  // 1) Every new buy → a notification (deduped by signature).
+  // 1) Record every new buy; notify only the FIRST time a KOL buys a given token
+  //    (KOLs often scale in over several txs — we don't want a message for each).
   for (const b of buys) {
-    if (!recordBuy(db, b)) continue;
+    if (!recordBuy(db, b)) continue; // dedup by signature
     candidates.add(b.tokenMint);
+    if (countBuysByWalletToken(db, b.kolWallet, b.tokenMint) > 1) continue; // already notified this pair
     await dispatchBuy(deps.tg, b.tokenMint, kolView(db, b));
     buysSent++;
   }

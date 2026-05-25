@@ -17,3 +17,11 @@ export function getBuysForTokenSince(db: DB, tokenMint: string, sinceTs: number)
     .prepare("SELECT * FROM buys WHERE tokenMint = ? AND ts >= ? ORDER BY ts ASC")
     .all(tokenMint, sinceTs) as BuyEvent[];
 }
+
+// How many buys this wallet has recorded for this token (used to notify only on the first).
+export function countBuysByWalletToken(db: DB, kolWallet: string, tokenMint: string): number {
+  const row = db
+    .prepare("SELECT COUNT(*) AS c FROM buys WHERE kolWallet = ? AND tokenMint = ?")
+    .get(kolWallet, tokenMint) as { c: number };
+  return row.c;
+}
