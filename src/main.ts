@@ -4,7 +4,7 @@ import { logger } from "./logger.js";
 import { openDb } from "./storage/db.js";
 import { getAllKols, replaceKols } from "./storage/kolStore.js";
 import { loadKols, manualFetcher, kolscanFetcher } from "./scraper/kolScraper.js";
-import { createHeliusMonitor, type WatchedWallet } from "./monitor/walletMonitor.js";
+import { createRpcMonitor, type WatchedWallet } from "./monitor/walletMonitor.js";
 import { createTelegramClient } from "./alert/telegram.js";
 import { fetchDexData } from "./safety/dexscreener.js";
 import { fetchRugData } from "./safety/rugcheck.js";
@@ -44,7 +44,12 @@ async function main() {
 
   const getWallets = (): WatchedWallet[] =>
     getAllKols(db).map((k) => ({ wallet: k.wallet, tier: k.tier }));
-  const monitor = createHeliusMonitor(config.heliusApiKey, getWallets);
+  const monitor = createRpcMonitor(
+    conn,
+    getWallets,
+    config.monitorRequestGapMs,
+    config.buyLookbackMin * 60_000
+  );
 
   const checkTokenBound = (mint: string) =>
     checkToken(mint, config.safety, {
@@ -53,9 +58,7 @@ async function main() {
       chain: (m) => fetchOnchainData(conn, m),
     });
 
-  // Only react to buys that happen after startup, so we don't replay history on launch.
-  const startedAt = Date.now();
-  logger.info("monitor loop started");
+  logger.info(`monitor loop started (notifying buys seen in the last ${config.buyLookbackMin} min)`);
   let cycle = 0;
   let totalBuys = 0;
   let totalStrong = 0;
@@ -67,7 +70,8 @@ async function main() {
     let strongCount = 0;
     try {
       const polled = await monitor.poll();
-      const buys = polled.filter((b) => b.ts >= startedAt);
+      const cutoff = Date.now() - config.buyLookbackMin * 60_000;
+      const buys = polled.filter((b) => b.ts >= cutoff);
       if (buys.length > 0) {
         const res = await processBuys(db, buys, {
           thresholds: config.safety,

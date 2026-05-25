@@ -24,6 +24,10 @@ export const config = {
     windowMin: num("CONFLUENCE_WINDOW_MIN", 30),
   },
   monitorIntervalSec: num("MONITOR_INTERVAL_SEC", 8),
+  // Gap between per-wallet Helius requests to stay under the free-tier rate limit.
+  monitorRequestGapMs: num("MONITOR_REQUEST_GAP_MS", 150),
+  // Only notify for buys seen within this many minutes (shows recent activity on launch).
+  buyLookbackMin: num("BUY_LOOKBACK_MIN", 10),
   scrapeIntervalHours: num("SCRAPE_INTERVAL_HOURS", 24),
   safety: {
     minLiquidityUsd: num("MIN_LIQUIDITY_USD", 10000),
