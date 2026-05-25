@@ -54,10 +54,19 @@ async function main() {
     });
 
   logger.info("monitor loop started");
+  let cycle = 0;
+  let totalBuys = 0;
+  let totalAlerts = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    cycle++;
+    const walletCount = getWallets().length;
+    let buyCount = 0;
+    let newAlerts = 0;
     try {
       const buys = await monitor.poll();
+      buyCount = buys.length;
+      totalBuys += buyCount;
       if (buys.length > 0) {
         const alerted = await processBuys(db, buys, {
           thresholds: config.safety,
@@ -65,11 +74,18 @@ async function main() {
           checkToken: checkTokenBound,
           tg,
         });
-        for (const mint of alerted) logger.info(`ALERTED ${mint}`);
+        newAlerts = alerted.length;
+        totalAlerts += newAlerts;
+        for (const mint of alerted) logger.info(`🚨 ALERT SENT: ${mint}`);
       }
     } catch (err) {
       logger.error("monitor loop error", err);
     }
+    logger.info(
+      `cycle ${cycle} | watching ${walletCount} wallets | ` +
+        `${buyCount} buys this poll (${totalBuys} total) | ` +
+        `${newAlerts} new alerts (${totalAlerts} total) | next poll in ${config.monitorIntervalSec}s`
+    );
     await sleep(config.monitorIntervalSec * 1000);
   }
 }
