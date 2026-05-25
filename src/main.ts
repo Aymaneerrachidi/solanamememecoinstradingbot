@@ -61,13 +61,13 @@ async function main() {
   logger.info(`monitor loop started (notifying buys seen in the last ${config.buyLookbackMin} min)`);
   let cycle = 0;
   let totalBuys = 0;
-  let totalStrong = 0;
+  let totalSignals = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     cycle++;
     const walletCount = getWallets().length;
     let buyCount = 0;
-    let strongCount = 0;
+    let signalCount = 0;
     try {
       const polled = await monitor.poll();
       const cutoff = Date.now() - config.buyLookbackMin * 60_000;
@@ -75,16 +75,16 @@ async function main() {
       if (buys.length > 0) {
         const res = await processBuys(db, buys, {
           thresholds: config.safety,
-          confluence: config.confluence,
+          signalLevels: config.signalLevels,
           checkToken: checkTokenBound,
           tokenInfo: (m) => fetchDexData(m),
           tg,
         });
         buyCount = res.buysSent;
         totalBuys += buyCount;
-        strongCount = res.strongSent.length;
-        totalStrong += strongCount;
-        for (const mint of res.strongSent) logger.info(`🚀 STRONG SIGNAL SENT: ${mint}`);
+        signalCount = res.signalsSent.length;
+        totalSignals += signalCount;
+        for (const key of res.signalsSent) logger.info(`🚀 SIGNAL SENT: ${key}`);
       }
     } catch (err) {
       logger.error("monitor loop error", err);
@@ -92,7 +92,7 @@ async function main() {
     logger.info(
       `cycle ${cycle} | watching ${walletCount} wallets | ` +
         `${buyCount} new buys (${totalBuys} total) | ` +
-        `${strongCount} strong (${totalStrong} total) | next poll in ${config.monitorIntervalSec}s`
+        `${signalCount} signals (${totalSignals} total) | next poll in ${config.monitorIntervalSec}s`
     );
     await sleep(config.monitorIntervalSec * 1000);
   }

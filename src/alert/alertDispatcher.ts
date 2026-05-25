@@ -1,6 +1,7 @@
 import type { DB } from "../storage/db.js";
 import type { SafetyResult, Tier } from "../types.js";
 import type { DexData } from "../safety/dexscreener.js";
+import type { SignalLevel } from "../engine/signalLevels.js";
 import type { TelegramClient } from "./telegram.js";
 import { alreadyAlerted, recordAlert } from "../storage/alertStore.js";
 
@@ -48,18 +49,19 @@ export function formatBuy(tokenMint: string, kol: KolView, info: DexData): strin
   ].join("\n");
 }
 
-// Multiple KOLs converged on the same token AND it passed safety.
-export function formatStrongAlert(
+// Multiple KOLs converged on the same token within a window AND it passed safety.
+export function formatSignal(
   tokenMint: string,
   kols: KolView[],
-  label: string,
+  level: SignalLevel,
   safety: SafetyResult,
   info: DexData
 ): string {
   const s = safety.stats;
   const who = kols.map((k) => ` • <b>${esc(k.name)}</b> (#${k.rank} · ${k.tier})`).join("\n");
   return [
-    `🚀🚀 <b>STRONG SIGNAL</b> · ${label}`,
+    `${level.label} <b>SIGNAL</b>`,
+    `⚡ ${kols.length} KOLs bought within ${level.windowMin} min`,
     ``,
     `🪙 ${tokenLabel(tokenMint, info)}`,
     `💰 MC ${compactUsd(info.marketCapUsd)}  ·  💧 Liq ${compactUsd(s.liquidityUsd)}`,
@@ -86,18 +88,20 @@ export async function dispatchBuy(
   await tg.send(formatBuy(tokenMint, kol, info));
 }
 
-// Sends one strong alert per token (deduped via the alerts table).
-export async function dispatchStrong(
+// Sends one alert per (token, level) — so a coin can re-alert as it climbs the ladder,
+// but never repeats the same level. Returns false if this level already fired.
+export async function dispatchSignal(
   db: DB,
   tg: TelegramClient,
   tokenMint: string,
   kols: KolView[],
-  label: string,
+  level: SignalLevel,
   safety: SafetyResult,
   info: DexData
 ): Promise<boolean> {
-  if (alreadyAlerted(db, tokenMint)) return false;
-  await tg.send(formatStrongAlert(tokenMint, kols, label, safety, info));
-  recordAlert(db, tokenMint, Date.now());
+  const key = `${tokenMint}#${level.level}`;
+  if (alreadyAlerted(db, key)) return false;
+  await tg.send(formatSignal(tokenMint, kols, level, safety, info));
+  recordAlert(db, key, Date.now());
   return true;
 }

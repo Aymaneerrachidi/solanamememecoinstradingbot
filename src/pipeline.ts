@@ -1,24 +1,19 @@
 import type { DB } from "./storage/db.js";
 import type { BuyEvent, SafetyResult, Tier } from "./types.js";
 import type { SafetyThresholds } from "./safety/evaluate.js";
-import {
-  evaluateConfluence,
-  countDistinctByTier,
-  distinctCount,
-  summarizeTiers,
-  type ConfluenceThresholds,
-} from "./engine/confluenceEngine.js";
+import { countDistinctByTier, distinctCount } from "./engine/confluenceEngine.js";
+import { detectSignalLevel, type SignalLevel } from "./engine/signalLevels.js";
 import { recordBuy, getBuysForTokenSince, countBuysByWalletToken } from "./storage/buyStore.js";
 import { alreadyAlerted } from "./storage/alertStore.js";
 import { getKol } from "./storage/kolStore.js";
-import { dispatchBuy, dispatchStrong, type KolView } from "./alert/alertDispatcher.js";
+import { dispatchBuy, dispatchSignal, type KolView } from "./alert/alertDispatcher.js";
 import type { TelegramClient } from "./alert/telegram.js";
 import type { DexData } from "./safety/dexscreener.js";
 import { logger } from "./logger.js";
 
 export interface PipelineDeps {
   thresholds: SafetyThresholds;
-  confluence: ConfluenceThresholds & { windowMin: number };
+  signalLevels: SignalLevel[];
   checkToken: (mint: string) => Promise<SafetyResult>;
   tokenInfo: (mint: string) => Promise<DexData>;
   tg: TelegramClient;
@@ -26,7 +21,7 @@ export interface PipelineDeps {
 
 export interface PipelineResult {
   buysSent: number;
-  strongSent: string[];
+  signalsSent: string[]; // "mint#level" keys that fired
 }
 
 const TIER_ORDER: Record<Tier, number> = { S: 3, A: 2, B: 1 };
@@ -37,43 +32,45 @@ function kolView(db: DB, buy: BuyEvent): KolView {
   return { name: buy.kolWallet.slice(0, 6), rank: 0, tier: buy.tier };
 }
 
+// Distinct KOL wallets that bought this token within the last `windowMin` minutes.
+function distinctKolsWithin(db: DB, mint: string, windowMin: number): number {
+  const since = Date.now() - windowMin * 60_000;
+  return distinctCount(countDistinctByTier(getBuysForTokenSince(db, mint, since)));
+}
+
 export async function processBuys(
   db: DB,
   buys: BuyEvent[],
   deps: PipelineDeps
 ): Promise<PipelineResult> {
-  const strongSent: string[] = [];
+  const signalsSent: string[] = [];
   let buysSent = 0;
   const candidates = new Set<string>();
 
-  // 1) Record every new buy; notify only the FIRST time a KOL buys a given token
-  //    (KOLs often scale in over several txs — we don't want a message for each).
+  // 1) Record every new buy; notify only the FIRST time a KOL buys a given token.
   for (const b of buys) {
     if (!recordBuy(db, b)) continue; // dedup by signature
     candidates.add(b.tokenMint);
-    if (countBuysByWalletToken(db, b.kolWallet, b.tokenMint) > 1) continue; // already notified this pair
+    if (countBuysByWalletToken(db, b.kolWallet, b.tokenMint) > 1) continue;
     const info = await deps.tokenInfo(b.tokenMint);
     await dispatchBuy(deps.tg, b.tokenMint, kolView(db, b), info);
     buysSent++;
   }
 
-  // 2) Tokens where 2+ distinct KOLs converged → safety-checked strong alert.
+  // 2) Evaluate the signal ladder for each touched token; fire the strongest new level.
   for (const mint of candidates) {
-    if (alreadyAlerted(db, mint)) continue;
-
-    const since = Date.now() - deps.confluence.windowMin * 60_000;
-    const windowBuys = getBuysForTokenSince(db, mint, since);
-    const counts = countDistinctByTier(windowBuys);
-    const isStrong = distinctCount(counts) >= 2 && evaluateConfluence(windowBuys, deps.confluence);
-    if (!isStrong) continue;
+    const level = detectSignalLevel(deps.signalLevels, (w) => distinctKolsWithin(db, mint, w));
+    if (!level) continue;
+    if (alreadyAlerted(db, `${mint}#${level.level}`)) continue;
 
     const safety = await deps.checkToken(mint);
     if (!safety.pass) {
-      logger.info(`strong candidate ${mint} failed safety: ${safety.failedGates.join(",")}`);
+      logger.info(`${level.label} candidate ${mint} failed safety: ${safety.failedGates.join(",")}`);
       continue;
     }
 
-    // Distinct KOLs (highest tier per wallet), sorted strongest first.
+    // Distinct KOLs within the level's window, sorted strongest first.
+    const windowBuys = getBuysForTokenSince(db, mint, Date.now() - level.windowMin * 60_000);
     const best = new Map<string, BuyEvent>();
     for (const b of windowBuys) {
       const cur = best.get(b.kolWallet);
@@ -84,9 +81,9 @@ export async function processBuys(
       .sort((a, c) => TIER_ORDER[c.tier] - TIER_ORDER[a.tier] || a.rank - c.rank);
 
     const info = await deps.tokenInfo(mint);
-    const sent = await dispatchStrong(db, deps.tg, mint, kols, summarizeTiers(counts), safety, info);
-    if (sent) strongSent.push(mint);
+    const sent = await dispatchSignal(db, deps.tg, mint, kols, level, safety, info);
+    if (sent) signalsSent.push(`${mint}#${level.level}`);
   }
 
-  return { buysSent, strongSent };
+  return { buysSent, signalsSent };
 }

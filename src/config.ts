@@ -23,6 +23,15 @@ export const config = {
     B: num("CONFLUENCE_B", 3),
     windowMin: num("CONFLUENCE_WINDOW_MIN", 30),
   },
+  // Signal ladder: a token fires the STRONGEST level it qualifies for (distinct KOLs within
+  // the window). Each level alerts once per token, so a coin can re-alert as it climbs.
+  // Edit freely — order doesn't matter, `level` decides strength.
+  signalLevels: [
+    { level: 1, label: "🟢 GOOD", minKols: 2, windowMin: 5 },
+    { level: 2, label: "🔵 STRONG", minKols: 4, windowMin: 15 },
+    { level: 3, label: "🟠 VERY STRONG", minKols: 4, windowMin: 5 },
+    { level: 4, label: "🔴 EXTREME", minKols: 6, windowMin: 15 },
+  ],
   monitorIntervalSec: num("MONITOR_INTERVAL_SEC", 8),
   // Gap between per-wallet Helius requests to stay under the free-tier rate limit.
   monitorRequestGapMs: num("MONITOR_REQUEST_GAP_MS", 150),
