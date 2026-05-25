@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { processBuys } from "../src/pipeline.js";
+import { processBuys, type PipelineDeps } from "../src/pipeline.js";
 import { openDb } from "../src/storage/db.js";
 import { replaceKols } from "../src/storage/kolStore.js";
 import type { BuyEvent, KolRecord, SafetyResult } from "../src/types.js";
+import type { DexData } from "../src/safety/dexscreener.js";
 
 const thresholds = {
   minLiquidityUsd: 10000, maxTop10Pct: 30, minVolume24hUsd: 20000,
@@ -13,6 +14,11 @@ const confluence = { S: 1, A: 2, B: 3, windowMin: 30 };
 const passSafety: SafetyResult = {
   pass: true, failedGates: [],
   stats: { liquidityUsd: 50000, lpBurnedOrLocked: true, mintAuthorityRevoked: true, freezeAuthorityRevoked: true, top10HolderPct: 20, volume24hUsd: 80000, ageMinutes: 45, holderCount: 300 },
+};
+
+const dexInfo: DexData = {
+  found: true, liquidityUsd: 50000, volume24hUsd: 80000, ageMinutes: 45,
+  name: "Dogwifhat", symbol: "WIF", marketCapUsd: 1_200_000, priceUsd: 0.001,
 };
 
 const kols: KolRecord[] = [
@@ -27,6 +33,16 @@ function seed() {
   return db;
 }
 
+function deps(send: () => Promise<void>, check: () => Promise<SafetyResult>): PipelineDeps {
+  return {
+    thresholds,
+    confluence,
+    checkToken: check,
+    tokenInfo: async () => dexInfo,
+    tg: { send },
+  };
+}
+
 function buy(wallet: string, tier: "S" | "A" | "B", sig: string, mint = "MINT", ts = Date.now()): BuyEvent {
   return { kolWallet: wallet, tier, tokenMint: mint, ts, signature: sig };
 }
@@ -35,16 +51,14 @@ describe("processBuys", () => {
   it("sends a message for every new buy and dedups by signature", async () => {
     const db = seed();
     const send = vi.fn(async () => {});
-    const check = vi.fn(async () => passSafety);
-
-    const r1 = await processBuys(db, [buy("w1", "S", "sig1")], { thresholds, confluence, checkToken: check, tg: { send } });
+    const r1 = await processBuys(db, [buy("w1", "S", "sig1")], deps(send, async () => passSafety));
     expect(r1.buysSent).toBe(1);
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][0]).toContain("Cented");
     expect(send.mock.calls[0][0]).toContain("#1");
+    expect(send.mock.calls[0][0]).toContain("WIF");
 
-    // Same signature again -> not re-sent.
-    const r2 = await processBuys(db, [buy("w1", "S", "sig1")], { thresholds, confluence, checkToken: check, tg: { send } });
+    const r2 = await processBuys(db, [buy("w1", "S", "sig1")], deps(send, async () => passSafety));
     expect(r2.buysSent).toBe(0);
     expect(send).toHaveBeenCalledTimes(1);
   });
@@ -52,16 +66,12 @@ describe("processBuys", () => {
   it("notifies only once when the same KOL buys the same token multiple times", async () => {
     const db = seed();
     const send = vi.fn(async () => {});
-    const check = vi.fn(async () => passSafety);
-    const deps = { thresholds, confluence, checkToken: check, tg: { send } };
-
-    // Same wallet (w1) buys the same MINT in 3 separate transactions.
     const r = await processBuys(
       db,
       [buy("w1", "S", "sig1"), buy("w1", "S", "sig2"), buy("w1", "S", "sig3")],
-      deps
+      deps(send, async () => passSafety)
     );
-    expect(r.buysSent).toBe(1); // only the first buy notifies
+    expect(r.buysSent).toBe(1);
     expect(send).toHaveBeenCalledTimes(1);
   });
 
@@ -69,8 +79,7 @@ describe("processBuys", () => {
     const db = seed();
     const send = vi.fn(async () => {});
     const check = vi.fn(async () => passSafety);
-
-    const r = await processBuys(db, [buy("w1", "S", "sig1")], { thresholds, confluence, checkToken: check, tg: { send } });
+    const r = await processBuys(db, [buy("w1", "S", "sig1")], deps(send, check));
     expect(r.buysSent).toBe(1);
     expect(r.strongSent).toEqual([]);
     expect(check).not.toHaveBeenCalled();
@@ -79,17 +88,14 @@ describe("processBuys", () => {
   it("fires a strong alert when 2 KOLs converge (1 S + 1 A) and safety passes", async () => {
     const db = seed();
     const send = vi.fn(async () => {});
-    const check = vi.fn(async () => passSafety);
-
     const r = await processBuys(
       db,
       [buy("w1", "S", "sig1"), buy("w2", "A", "sig2")],
-      { thresholds, confluence, checkToken: check, tg: { send } }
+      deps(send, async () => passSafety)
     );
     expect(r.buysSent).toBe(2);
     expect(r.strongSent).toEqual(["MINT"]);
-    // 2 buy messages + 1 strong alert
-    expect(send).toHaveBeenCalledTimes(3);
+    expect(send).toHaveBeenCalledTimes(3); // 2 buys + 1 strong
     const strongMsg = send.mock.calls[2][0];
     expect(strongMsg).toContain("STRONG");
     expect(strongMsg).toContain("1 S + 1 A");
@@ -101,11 +107,10 @@ describe("processBuys", () => {
     const db = seed();
     const send = vi.fn(async () => {});
     const fail: SafetyResult = { ...passSafety, pass: false, failedGates: ["liquidity"] };
-
     const r = await processBuys(
       db,
       [buy("w1", "S", "sig1"), buy("w2", "A", "sig2")],
-      { thresholds, confluence, checkToken: async () => fail, tg: { send } }
+      deps(send, async () => fail)
     );
     expect(r.buysSent).toBe(2);
     expect(r.strongSent).toEqual([]);
@@ -115,11 +120,10 @@ describe("processBuys", () => {
     const db = seed();
     const send = vi.fn(async () => {});
     const check = vi.fn(async () => passSafety);
-
     const r = await processBuys(
       db,
       [buy("w3", "B", "sig1"), buy("w3b", "B", "sig2")],
-      { thresholds, confluence, checkToken: check, tg: { send } }
+      deps(send, check)
     );
     expect(r.strongSent).toEqual([]);
     expect(check).not.toHaveBeenCalled();
@@ -128,14 +132,12 @@ describe("processBuys", () => {
   it("dedups the strong alert per token", async () => {
     const db = seed();
     const send = vi.fn(async () => {});
-    const check = vi.fn(async () => passSafety);
-    const deps = { thresholds, confluence, checkToken: check, tg: { send } };
+    const d = deps(send, async () => passSafety);
 
-    const r1 = await processBuys(db, [buy("w1", "S", "sig1"), buy("w2", "A", "sig2")], deps);
+    const r1 = await processBuys(db, [buy("w1", "S", "sig1"), buy("w2", "A", "sig2")], d);
     expect(r1.strongSent).toEqual(["MINT"]);
 
-    // Another A-tier buys the same token -> buy message sent, but no second strong alert.
-    const r2 = await processBuys(db, [buy("w2b", "A", "sig3")], deps);
+    const r2 = await processBuys(db, [buy("w2b", "A", "sig3")], d);
     expect(r2.buysSent).toBe(1);
     expect(r2.strongSent).toEqual([]);
   });

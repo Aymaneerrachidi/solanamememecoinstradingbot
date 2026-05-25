@@ -1,9 +1,8 @@
 import type { DB } from "../storage/db.js";
 import type { SafetyResult, Tier } from "../types.js";
+import type { DexData } from "../safety/dexscreener.js";
 import type { TelegramClient } from "./telegram.js";
 import { alreadyAlerted, recordAlert } from "../storage/alertStore.js";
-
-const usd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
 export interface KolView {
   name: string;
@@ -11,13 +10,41 @@ export interface KolView {
   tier: Tier;
 }
 
-// A single KOL buy — sent for every detected buy, no safety filtering.
-export function formatBuy(tokenMint: string, kol: KolView): string {
+const esc = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function compactUsd(n?: number): string {
+  if (n === undefined || n === null || Number.isNaN(n) || n <= 0) return "—";
+  if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return "$" + (n / 1e3).toFixed(1) + "K";
+  return "$" + Math.round(n).toString();
+}
+
+function tokenLabel(tokenMint: string, info: DexData): string {
+  if (info.symbol) {
+    const name = info.name && info.name !== info.symbol ? ` — ${esc(info.name)}` : "";
+    return `<b>$${esc(info.symbol)}</b>${name}`;
+  }
+  return `<code>${tokenMint.slice(0, 8)}…</code>`;
+}
+
+const chart = (mint: string) => `https://dexscreener.com/solana/${mint}`;
+const tierEmoji: Record<Tier, string> = { S: "🥇", A: "🥈", B: "🥉" };
+
+// A single KOL buy — sent the first time a KOL buys a token. No safety filtering.
+export function formatBuy(tokenMint: string, kol: KolView, info: DexData): string {
   return [
-    `📥 *KOL Buy* — ${kol.tier}-tier`,
-    `${kol.name} (rank #${kol.rank} · ${kol.tier})`,
-    `Token: \`${tokenMint}\``,
-    `📊 https://dexscreener.com/solana/${tokenMint}`,
+    `🟢 <b>KOL BUY</b> · ${tierEmoji[kol.tier]} ${kol.tier}-tier`,
+    ``,
+    `👤 <b>${esc(kol.name)}</b> · rank #${kol.rank}`,
+    `🪙 ${tokenLabel(tokenMint, info)}`,
+    `💰 MC ${compactUsd(info.marketCapUsd)}  ·  💧 Liq ${compactUsd(info.liquidityUsd)}`,
+    ``,
+    `📋 <b>Contract</b> (tap to copy):`,
+    `<code>${tokenMint}</code>`,
+    ``,
+    `📊 <a href="${chart(tokenMint)}">DexScreener chart</a>`,
   ].join("\n");
 }
 
@@ -26,30 +53,37 @@ export function formatStrongAlert(
   tokenMint: string,
   kols: KolView[],
   label: string,
-  safety: SafetyResult
+  safety: SafetyResult,
+  info: DexData
 ): string {
-  const who = kols.map((k) => `${k.name} (#${k.rank} ${k.tier})`).join(" + ");
   const s = safety.stats;
+  const who = kols.map((k) => ` • <b>${esc(k.name)}</b> (#${k.rank} · ${k.tier})`).join("\n");
   return [
-    `🚀🚀 *STRONG SIGNAL* — ${label}`,
+    `🚀🚀 <b>STRONG SIGNAL</b> · ${label}`,
     ``,
-    `*Token:* \`${tokenMint}\``,
-    `*KOLs in:* ${who}`,
+    `🪙 ${tokenLabel(tokenMint, info)}`,
+    `💰 MC ${compactUsd(info.marketCapUsd)}  ·  💧 Liq ${compactUsd(s.liquidityUsd)}`,
+    `📈 Vol 24h ${compactUsd(s.volume24hUsd)}  ·  🎂 ${Math.round(s.ageMinutes)}m  ·  👑 Top10 ${s.top10HolderPct.toFixed(0)}%`,
+    `🔒 LP ${s.lpBurnedOrLocked ? "✅" : "❌"}  ·  Mint ${s.mintAuthorityRevoked ? "✅" : "❌"}  ·  Freeze ${s.freezeAuthorityRevoked ? "✅" : "❌"}`,
     ``,
-    `*Liquidity:* ${usd(s.liquidityUsd)}`,
-    `*24h Volume:* ${usd(s.volume24hUsd)}`,
-    `*Age:* ${Math.round(s.ageMinutes)} min`,
-    `*Top-10 holders:* ${s.top10HolderPct.toFixed(1)}%`,
-    `*LP locked/burned:* ${s.lpBurnedOrLocked ? "✅" : "❌"}`,
-    `*Mint/Freeze revoked:* ${s.mintAuthorityRevoked ? "✅" : "❌"}/${s.freezeAuthorityRevoked ? "✅" : "❌"}`,
+    `👥 <b>KOLs in (${kols.length}):</b>`,
+    who,
     ``,
-    `📊 https://dexscreener.com/solana/${tokenMint}`,
+    `📋 <b>Contract</b> (tap to copy):`,
+    `<code>${tokenMint}</code>`,
+    ``,
+    `📊 <a href="${chart(tokenMint)}">DexScreener chart</a>`,
   ].join("\n");
 }
 
-// Sends a per-buy notification. No dedup here — the pipeline dedups by signature.
-export async function dispatchBuy(tg: TelegramClient, tokenMint: string, kol: KolView): Promise<void> {
-  await tg.send(formatBuy(tokenMint, kol));
+// Sends a per-buy notification. Dedup is handled by the pipeline.
+export async function dispatchBuy(
+  tg: TelegramClient,
+  tokenMint: string,
+  kol: KolView,
+  info: DexData
+): Promise<void> {
+  await tg.send(formatBuy(tokenMint, kol, info));
 }
 
 // Sends one strong alert per token (deduped via the alerts table).
@@ -59,10 +93,11 @@ export async function dispatchStrong(
   tokenMint: string,
   kols: KolView[],
   label: string,
-  safety: SafetyResult
+  safety: SafetyResult,
+  info: DexData
 ): Promise<boolean> {
   if (alreadyAlerted(db, tokenMint)) return false;
-  await tg.send(formatStrongAlert(tokenMint, kols, label, safety));
+  await tg.send(formatStrongAlert(tokenMint, kols, label, safety, info));
   recordAlert(db, tokenMint, Date.now());
   return true;
 }

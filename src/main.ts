@@ -77,6 +77,7 @@ async function main() {
           thresholds: config.safety,
           confluence: config.confluence,
           checkToken: checkTokenBound,
+          tokenInfo: (m) => fetchDexData(m),
           tg,
         });
         buyCount = res.buysSent;

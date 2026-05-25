@@ -13,12 +13,14 @@ import { alreadyAlerted } from "./storage/alertStore.js";
 import { getKol } from "./storage/kolStore.js";
 import { dispatchBuy, dispatchStrong, type KolView } from "./alert/alertDispatcher.js";
 import type { TelegramClient } from "./alert/telegram.js";
+import type { DexData } from "./safety/dexscreener.js";
 import { logger } from "./logger.js";
 
 export interface PipelineDeps {
   thresholds: SafetyThresholds;
   confluence: ConfluenceThresholds & { windowMin: number };
   checkToken: (mint: string) => Promise<SafetyResult>;
+  tokenInfo: (mint: string) => Promise<DexData>;
   tg: TelegramClient;
 }
 
@@ -50,7 +52,8 @@ export async function processBuys(
     if (!recordBuy(db, b)) continue; // dedup by signature
     candidates.add(b.tokenMint);
     if (countBuysByWalletToken(db, b.kolWallet, b.tokenMint) > 1) continue; // already notified this pair
-    await dispatchBuy(deps.tg, b.tokenMint, kolView(db, b));
+    const info = await deps.tokenInfo(b.tokenMint);
+    await dispatchBuy(deps.tg, b.tokenMint, kolView(db, b), info);
     buysSent++;
   }
 
@@ -80,7 +83,8 @@ export async function processBuys(
       .map((b) => kolView(db, b))
       .sort((a, c) => TIER_ORDER[c.tier] - TIER_ORDER[a.tier] || a.rank - c.rank);
 
-    const sent = await dispatchStrong(db, deps.tg, mint, kols, summarizeTiers(counts), safety);
+    const info = await deps.tokenInfo(mint);
+    const sent = await dispatchStrong(db, deps.tg, mint, kols, summarizeTiers(counts), safety, info);
     if (sent) strongSent.push(mint);
   }
 
