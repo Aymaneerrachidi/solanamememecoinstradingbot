@@ -61,11 +61,10 @@ export const config = {
   // KOL list is built from accumulated daily snapshots over this window (weekly+monthly
   // consistency), capped to the strongest `maxKols` to bound monitoring load.
   kolHistoryDays: num("KOL_HISTORY_DAYS", 30),
-  // Free RPC tiers throttle hard above ~25-30 wallets. Raise this only with a paid RPC.
-  maxKols: num("MAX_KOLS", 30),
+  maxKols: num("MAX_KOLS", 75),
   monitorIntervalSec: num("MONITOR_INTERVAL_SEC", 8),
   // Gap between RPC requests to stay under the free-tier rate limit. Raise if you see 429s.
-  monitorRequestGapMs: num("MONITOR_REQUEST_GAP_MS", 350),
+  monitorRequestGapMs: num("MONITOR_REQUEST_GAP_MS", 200),
   // Only notify for buys seen within this many minutes (shows recent activity on launch).
   buyLookbackMin: num("BUY_LOOKBACK_MIN", 10),
   scrapeIntervalHours: num("SCRAPE_INTERVAL_HOURS", 24),
