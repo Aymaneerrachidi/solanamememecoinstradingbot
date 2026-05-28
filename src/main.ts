@@ -17,7 +17,7 @@ import { fetchDexData } from "./safety/dexscreener.js";
 import { fetchRugData } from "./safety/rugcheck.js";
 import { fetchOnchainData } from "./safety/onchain.js";
 import { checkToken } from "./safety/safetyChecker.js";
-import { processBuys, checkMultipliers } from "./pipeline.js";
+import { processBuys, processSells, checkMultipliers } from "./pipeline.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -98,7 +98,9 @@ async function main() {
     try {
       const polled = await monitor.poll();
       const cutoff = Date.now() - config.buyLookbackMin * 60_000;
-      const buys = polled.filter((b) => b.ts >= cutoff);
+      const buys = polled.buys.filter((b) => b.ts >= cutoff);
+      const sells = polled.sells.filter((s) => s.ts >= cutoff);
+
       if (buys.length > 0) {
         const res = await processBuys(db, buys, {
           signalLevels: config.signalLevels,
@@ -112,6 +114,15 @@ async function main() {
         signalCount = res.signalsSent.length;
         totalSignals += signalCount;
         for (const key of res.signalsSent) logger.info(`🚀 SIGNAL SENT: ${key}`);
+      }
+
+      if (sells.length > 0) {
+        const res = await processSells(db, sells, {
+          tokenInfo: (m) => fetchDexData(m),
+          tg,
+          exitSellerThreshold: config.exitSellerThreshold,
+        });
+        for (const key of res.exitsSent) logger.info(`🔻 EXIT ALERT SENT: ${key}`);
       }
 
       // Performance tracking: ping when flagged coins hit x2/x5/x10...

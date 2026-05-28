@@ -1,6 +1,6 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { logger } from "../logger.js";
-import type { BuyEvent, Tier } from "../types.js";
+import type { BuyEvent, SellEvent, Tier } from "../types.js";
 
 // Tokens that don't represent a memecoin "buy" — receiving these usually means the KOL
 // SOLD a token (got SOL/stablecoins back), so they must not count as buys.
@@ -27,11 +27,17 @@ export interface ParsedTxLike {
   } | null;
 }
 
-// A "buy" = a token whose balance for this wallet increased over the transaction.
-export function parseBuysFromParsedTx(tx: ParsedTxLike, wallet: string, tier: Tier): BuyEvent[] {
+interface BalanceDelta {
+  buys: BuyEvent[];
+  sells: SellEvent[];
+}
+
+// Walks pre/post token balances for a wallet; "buy" = balance up, "sell" = balance down.
+export function parseDeltasFromParsedTx(tx: ParsedTxLike, wallet: string, tier: Tier): BalanceDelta {
+  const result: BalanceDelta = { buys: [], sells: [] };
   const meta = tx.meta;
   const signature = tx.transaction?.signatures?.[0];
-  if (!meta || !signature) return [];
+  if (!meta || !signature) return result;
 
   const ts = (tx.blockTime ?? 0) * 1000;
   const before = new Map<string, number>();
@@ -39,21 +45,44 @@ export function parseBuysFromParsedTx(tx: ParsedTxLike, wallet: string, tier: Ti
     if (b.owner === wallet && b.mint) before.set(b.mint, Number(b.uiTokenAmount?.amount ?? 0));
   }
 
-  const buys: BuyEvent[] = [];
-  const seen = new Set<string>();
+  // Walk post-balances for increases (buys) and pre-balances for decreases (sells).
+  const seenBuys = new Set<string>();
   for (const b of meta.postTokenBalances ?? []) {
-    if (b.owner !== wallet || !b.mint || EXCLUDED_MINTS.has(b.mint) || seen.has(b.mint)) continue;
+    if (b.owner !== wallet || !b.mint || EXCLUDED_MINTS.has(b.mint) || seenBuys.has(b.mint)) continue;
     const after = Number(b.uiTokenAmount?.amount ?? 0);
     if (after > (before.get(b.mint) ?? 0)) {
-      seen.add(b.mint);
-      buys.push({ kolWallet: wallet, tier, tokenMint: b.mint, ts, signature });
+      seenBuys.add(b.mint);
+      result.buys.push({ kolWallet: wallet, tier, tokenMint: b.mint, ts, signature });
     }
   }
-  return buys;
+  const postByMint = new Map<string, number>();
+  for (const b of meta.postTokenBalances ?? []) {
+    if (b.owner === wallet && b.mint) postByMint.set(b.mint, Number(b.uiTokenAmount?.amount ?? 0));
+  }
+  const seenSells = new Set<string>();
+  for (const [mint, beforeAmt] of before) {
+    if (EXCLUDED_MINTS.has(mint) || seenSells.has(mint)) continue;
+    const afterAmt = postByMint.get(mint) ?? 0;
+    if (afterAmt < beforeAmt) {
+      seenSells.add(mint);
+      result.sells.push({ kolWallet: wallet, tier, tokenMint: mint, ts, signature });
+    }
+  }
+  return result;
+}
+
+// Kept for back-compat with existing callers/tests.
+export function parseBuysFromParsedTx(tx: ParsedTxLike, wallet: string, tier: Tier): BuyEvent[] {
+  return parseDeltasFromParsedTx(tx, wallet, tier).buys;
+}
+
+export interface PollResult {
+  buys: BuyEvent[];
+  sells: SellEvent[];
 }
 
 export interface WalletMonitor {
-  poll(): Promise<BuyEvent[]>;
+  poll(): Promise<PollResult>;
 }
 
 export interface WatchedWallet {
@@ -72,8 +101,9 @@ export function createRpcMonitor(
 ): WalletMonitor {
   const lastSig = new Map<string, string>();
   return {
-    async poll(): Promise<BuyEvent[]> {
-      const all: BuyEvent[] = [];
+    async poll(): Promise<PollResult> {
+      const buys: BuyEvent[] = [];
+      const sells: SellEvent[] = [];
       const cutoff = Date.now() - lookbackMs;
       for (const w of getWallets()) {
         try {
@@ -96,14 +126,18 @@ export function createRpcMonitor(
             const tx = await conn.getParsedTransaction(s.signature, {
               maxSupportedTransactionVersion: 0,
             });
-            if (tx) all.push(...parseBuysFromParsedTx(tx as ParsedTxLike, w.wallet, w.tier));
+            if (tx) {
+              const d = parseDeltasFromParsedTx(tx as ParsedTxLike, w.wallet, w.tier);
+              buys.push(...d.buys);
+              sells.push(...d.sells);
+            }
             if (gapMs > 0) await sleep(gapMs);
           }
         } catch (err) {
           logger.warn(`monitor poll failed for ${w.wallet}`, err);
         }
       }
-      return all;
+      return { buys, sells };
     },
   };
 }

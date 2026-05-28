@@ -19,6 +19,14 @@ export interface BuyEvent {
   signature: string;
 }
 
+export interface SellEvent {
+  kolWallet: string;
+  tier: Tier;
+  tokenMint: string;
+  ts: number;
+  signature: string;
+}
+
 export interface SafetyStats {
   marketCapUsd: number;
   liquidityUsd: number;

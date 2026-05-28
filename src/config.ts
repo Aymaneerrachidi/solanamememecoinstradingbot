@@ -46,6 +46,8 @@ export const config = {
   // of the market cap at flag time. Stops tracking after `multiplierTrackDays`.
   multiplierMilestones: numList("MULTIPLIER_MILESTONES", [2, 5, 10, 25, 50, 100]),
   multiplierTrackDays: num("MULTIPLIER_TRACK_DAYS", 7),
+  // Exit alert: distinct KOLs that must have sold a signaled coin before we ping.
+  exitSellerThreshold: num("EXIT_SELLER_THRESHOLD", 2),
   // Signal ladder: a token fires the STRONGEST level it qualifies for (distinct KOLs within
   // the window). Each level alerts once per token, so a coin can re-alert as it climbs.
   // Edit freely — order doesn't matter, `level` decides strength.

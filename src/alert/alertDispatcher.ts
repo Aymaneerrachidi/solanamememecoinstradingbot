@@ -148,6 +148,45 @@ export function formatSignal(
   ].join("\n");
 }
 
+// KOLs are exiting a signaled coin — sent when distinct sellers crosses a threshold.
+export function formatExit(
+  tokenMint: string,
+  sellers: KolView[],
+  info: DexData,
+  peakMcUsd: number
+): string {
+  const who = sellers.map(kolLine).join("\n");
+  const peakDelta =
+    info.marketCapUsd && peakMcUsd > 0
+      ? ` (peak ${compactUsd(peakMcUsd)} → now ${compactUsd(info.marketCapUsd)})`
+      : "";
+  return [
+    `🔻 <b>${sellers.length} KOL${sellers.length > 1 ? "s" : ""} EXITED</b>${peakDelta}`,
+    ``,
+    `🪙 ${tokenLabel(tokenMint, info)}`,
+    `💵 ${formatPrice(info.priceUsd)}`,
+    `💰 MC ${compactUsd(info.marketCapUsd)}  ·  💧 Liq ${compactUsd(info.liquidityUsd)}`,
+    ``,
+    `👥 <b>Sold:</b>`,
+    who,
+    ``,
+    `📋 <b>Contract</b>:`,
+    `<code>${tokenMint}</code>`,
+    ``,
+    ...linkRows(tokenMint),
+  ].join("\n");
+}
+
+export async function dispatchExit(
+  tg: TelegramClient,
+  tokenMint: string,
+  sellers: KolView[],
+  info: DexData,
+  peakMcUsd: number
+): Promise<void> {
+  await tg.send(formatExit(tokenMint, sellers, info, peakMcUsd));
+}
+
 // A flagged coin reached a new x-milestone since it was first signalled.
 export function formatMultiplier(
   tokenMint: string,
