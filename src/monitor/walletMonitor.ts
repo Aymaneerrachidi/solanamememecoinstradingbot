@@ -61,12 +61,13 @@ export interface WatchedWallet {
   tier: Tier;
 }
 
-// Standard-RPC polling: per wallet, fetch recent signatures, then parse only the ones that
-// are new (unseen) and recent (within lookback). Requests spaced by `gapMs` for rate limits.
+// Standard-RPC polling: per wallet, fetch recent signatures, then BATCH-fetch the parsed
+// transactions for the new+recent ones in a single request. Spacing requests by `gapMs`
+// keeps us under the RPC rate limit (≈2 calls per wallet instead of 1-per-signature).
 export function createRpcMonitor(
   conn: Connection,
   getWallets: () => WatchedWallet[],
-  gapMs = 150,
+  gapMs = 250,
   lookbackMs = 10 * 60_000
 ): WalletMonitor {
   const lastSig = new Map<string, string>();
@@ -78,24 +79,34 @@ export function createRpcMonitor(
         try {
           const pubkey = new PublicKey(w.wallet);
           const sigs = await conn.getSignaturesForAddress(pubkey, { limit: 10 });
+          if (gapMs > 0) await sleep(gapMs);
+
           const prevTop = lastSig.get(w.wallet);
           if (sigs.length > 0) lastSig.set(w.wallet, sigs[0].signature);
 
+          // First time we see this wallet: seed its latest signature and skip the historical
+          // backfill (avoids a large request burst on startup). React to new buys from here on.
+          if (prevTop === undefined) continue;
+
+          // Collect only new (unseen), successful, recent signatures.
+          const toFetch: string[] = [];
           for (const s of sigs) {
             if (s.signature === prevTop) break; // reached already-processed history
             if (s.err) continue;
             if ((s.blockTime ?? 0) * 1000 < cutoff) continue; // too old to care about
-
-            const tx = await conn.getParsedTransaction(s.signature, {
-              maxSupportedTransactionVersion: 0,
-            });
-            if (tx) all.push(...parseBuysFromParsedTx(tx as ParsedTxLike, w.wallet, w.tier));
-            if (gapMs > 0) await sleep(gapMs);
+            toFetch.push(s.signature);
           }
+          if (toFetch.length === 0) continue;
+
+          // One batched request for all new signatures of this wallet.
+          const txs = await conn.getParsedTransactions(toFetch, { maxSupportedTransactionVersion: 0 });
+          for (const tx of txs) {
+            if (tx) all.push(...parseBuysFromParsedTx(tx as ParsedTxLike, w.wallet, w.tier));
+          }
+          if (gapMs > 0) await sleep(gapMs);
         } catch (err) {
           logger.warn(`monitor poll failed for ${w.wallet}`, err);
         }
-        if (gapMs > 0) await sleep(gapMs);
       }
       return all;
     },
