@@ -17,7 +17,7 @@ import { fetchDexData } from "./safety/dexscreener.js";
 import { fetchRugData } from "./safety/rugcheck.js";
 import { fetchOnchainData } from "./safety/onchain.js";
 import { checkToken } from "./safety/safetyChecker.js";
-import { processBuys } from "./pipeline.js";
+import { processBuys, checkMultipliers } from "./pipeline.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -113,6 +113,15 @@ async function main() {
         totalSignals += signalCount;
         for (const key of res.signalsSent) logger.info(`🚀 SIGNAL SENT: ${key}`);
       }
+
+      // Performance tracking: ping when flagged coins hit x2/x5/x10...
+      const mult = await checkMultipliers(db, {
+        tokenInfo: (m) => fetchDexData(m),
+        tg,
+        milestones: config.multiplierMilestones,
+        trackDays: config.multiplierTrackDays,
+      });
+      for (const key of mult) logger.info(`📈 MULTIPLIER HIT: ${key}`);
     } catch (err) {
       logger.error("monitor loop error", err);
     }

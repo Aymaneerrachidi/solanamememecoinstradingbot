@@ -5,7 +5,14 @@ import { detectSignalLevel, type SignalLevel } from "./engine/signalLevels.js";
 import { recordBuy, getBuysForTokenSince, countBuysByWalletToken } from "./storage/buyStore.js";
 import { alreadyAlerted } from "./storage/alertStore.js";
 import { getKol } from "./storage/kolStore.js";
-import { dispatchBuy, dispatchSignal, type KolView } from "./alert/alertDispatcher.js";
+import {
+  trackToken,
+  getTrackedTokens,
+  updateTrackProgress,
+  untrackToken,
+} from "./storage/trackedTokenStore.js";
+import { detectMultiplierMilestone } from "./engine/multiplier.js";
+import { dispatchBuy, dispatchSignal, dispatchMultiplier, type KolView } from "./alert/alertDispatcher.js";
 import type { TelegramClient } from "./alert/telegram.js";
 import type { DexData } from "./safety/dexscreener.js";
 import { logger } from "./logger.js";
@@ -28,8 +35,8 @@ const TIER_ORDER: Record<Tier, number> = { S: 3, A: 2, B: 1 };
 
 function kolView(db: DB, buy: BuyEvent): KolView {
   const k = getKol(db, buy.kolWallet);
-  if (k) return { name: k.name, rank: k.rank, tier: k.tier, winRate: k.winRate, pnl: k.pnl };
-  return { name: buy.kolWallet.slice(0, 6), rank: 0, tier: buy.tier, winRate: 0, pnl: 0 };
+  if (k) return { name: k.name, rank: k.rank, tier: k.tier, winRate: k.winRate, pnl: k.pnl, appearances: k.appearances };
+  return { name: buy.kolWallet.slice(0, 6), rank: 0, tier: buy.tier, winRate: 0, pnl: 0, appearances: 0 };
 }
 
 // Distinct KOL wallets that bought this token within the last `windowMin` minutes.
@@ -86,8 +93,60 @@ export async function processBuys(
 
     const info = await deps.tokenInfo(mint);
     const sent = await dispatchSignal(db, deps.tg, mint, kols, level, safety, info);
-    if (sent) signalsSent.push(`${mint}#${level.level}`);
+    if (sent) {
+      signalsSent.push(`${mint}#${level.level}`);
+      // Start tracking this coin for x2/x5/x10... performance alerts (baseline = MC now).
+      trackToken(db, {
+        tokenMint: mint,
+        symbol: info.symbol,
+        name: info.name,
+        baselineMcUsd: safety.stats.marketCapUsd || info.marketCapUsd || 0,
+        ts: Date.now(),
+      });
+    }
   }
 
   return { buysSeen, buysSent, signalsSent };
+}
+
+export interface MultiplierDeps {
+  tokenInfo: (mint: string) => Promise<DexData>;
+  tg: TelegramClient;
+  milestones: number[];
+  trackDays: number;
+}
+
+// Checks every tracked coin's current market cap against its flag-time baseline and pings
+// when it crosses a new x-milestone. Prunes coins older than `trackDays`. Returns fired keys.
+export async function checkMultipliers(db: DB, deps: MultiplierDeps): Promise<string[]> {
+  const fired: string[] = [];
+  const maxAgeMs = deps.trackDays * 86_400_000;
+  const now = Date.now();
+
+  for (const t of getTrackedTokens(db)) {
+    if (now - t.baselineTs > maxAgeMs) {
+      untrackToken(db, t.tokenMint);
+      continue;
+    }
+    let info: DexData;
+    try {
+      info = await deps.tokenInfo(t.tokenMint);
+    } catch {
+      continue;
+    }
+    if (!info.found || !info.marketCapUsd) continue;
+
+    const mult = info.marketCapUsd / t.baselineMcUsd;
+    const peakMult = Math.max(t.peakMult, mult);
+    const hit = detectMultiplierMilestone(info.marketCapUsd, t.baselineMcUsd, t.lastMilestone, deps.milestones);
+
+    if (hit !== null) {
+      await dispatchMultiplier(deps.tg, t.tokenMint, hit, t.baselineMcUsd, info);
+      updateTrackProgress(db, t.tokenMint, hit, peakMult);
+      fired.push(`${t.tokenMint}#x${hit}`);
+    } else if (peakMult > t.peakMult) {
+      updateTrackProgress(db, t.tokenMint, t.lastMilestone, peakMult);
+    }
+  }
+  return fired;
 }

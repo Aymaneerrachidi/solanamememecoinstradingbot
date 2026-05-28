@@ -19,9 +19,13 @@ tokens, runs strict anti-rug / anti-dead-coin safety gates, and sends Telegram a
 4. **Safety (lean)** — a signal must pass: market cap ≥ `MIN_MARKET_CAP_USD` (and ≤
    `MAX_MARKET_CAP_USD` if set) **and** the three anti-rug checks (LP locked/burned, mint
    authority revoked, freeze authority revoked). Fail-closed: missing data ⇒ reject.
-5. **Alert** — Telegram message with token symbol/name, market cap, the KOLs (+ranks), the
-   safety snapshot, and a tap-to-copy contract address.
-   Individual per-buy pings are opt-in via `INDIVIDUAL_BUY_TIERS` (default off).
+5. **Alert** — Telegram message with token symbol/name, price + 5m/1h/6h/24h changes, MC/FDV,
+   liquidity, volume, 24h buy/sell counts, the KOLs (rank · tier · win rate · days-on-board),
+   the safety snapshot, a tap-to-copy contract, and quick links (DexScreener/GMGN/Birdeye,
+   Axiom/BullX/Pump.fun, Solscan). Individual per-buy pings are opt-in via `INDIVIDUAL_BUY_TIERS`.
+6. **Multiplier alerts** — after a coin fires a signal, it's tracked and pings you when its
+   market cap hits `MULTIPLIER_MILESTONES` (default 2x/5x/10x/25x/50x/100x), for up to
+   `MULTIPLIER_TRACK_DAYS`.
 
 ## Setup
 

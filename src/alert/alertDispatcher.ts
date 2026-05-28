@@ -11,6 +11,7 @@ export interface KolView {
   tier: Tier;
   winRate: number; // 0-1
   pnl: number; // SOL
+  appearances: number; // days on the leaderboard in the history window
 }
 
 const esc = (s: string) =>
@@ -31,11 +32,6 @@ function formatPrice(p?: number): string {
   return "$" + p.toPrecision(3); // tiny prices keep significant figures
 }
 
-function pct(n?: number): string {
-  if (n === undefined || n === null || Number.isNaN(n)) return "";
-  return ` (24h ${n >= 0 ? "+" : ""}${n.toFixed(0)}%)`;
-}
-
 function tokenLabel(tokenMint: string, info: DexData): string {
   if (info.symbol) {
     const name = info.name && info.name !== info.symbol ? ` — ${esc(info.name)}` : "";
@@ -45,8 +41,18 @@ function tokenLabel(tokenMint: string, info: DexData): string {
 }
 
 const tierEmoji: Record<Tier, string> = { S: "🥇", A: "🥈", B: "🥉" };
-const wr = (w: number) => `${Math.round((w ?? 0) * 100)}% WR`;
-const sol = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n)} SOL`;
+const sol = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n)}◎`;
+
+function changePart(label: string, n?: number): string | null {
+  if (n === undefined || n === null || Number.isNaN(n)) return null;
+  return `${label} ${n >= 0 ? "+" : ""}${n.toFixed(0)}%`;
+}
+
+// One compact line per KOL: rank, tier, win rate, PnL, days-on-board.
+function kolLine(k: KolView): string {
+  const days = k.appearances > 0 ? ` · 📅 ${k.appearances}d` : "";
+  return ` • <b>${esc(k.name)}</b> #${k.rank}·${k.tier} · ${Math.round(k.winRate * 100)}% WR · ${sol(k.pnl)}${days}`;
+}
 
 // Quick-action link rows (chart / trade / explorer).
 function linkRows(mint: string): string[] {
@@ -55,30 +61,59 @@ function linkRows(mint: string): string[] {
       `<a href="https://gmgn.ai/sol/token/${mint}">GMGN</a> · ` +
       `<a href="https://birdeye.so/token/${mint}?chain=solana">Birdeye</a>`,
     `🛒 <a href="https://axiom.trade/t/${mint}">Axiom</a> · ` +
+      `<a href="https://neo.bullx.io/terminal?chainId=1399811149&address=${mint}">BullX</a> · ` +
       `<a href="https://pump.fun/${mint}">Pump.fun</a> · ` +
       `<a href="https://solscan.io/token/${mint}">Solscan</a>`,
   ];
 }
 
 function tokenStatsLines(info: DexData, s: SafetyResult["stats"]): string[] {
+  const changes = [
+    changePart("5m", info.priceChangeM5),
+    changePart("1h", info.priceChangeH1),
+    changePart("6h", info.priceChangeH6),
+    changePart("24h", info.priceChangeH24),
+  ].filter(Boolean);
+  const txns =
+    info.txns24Buys !== undefined || info.txns24Sells !== undefined
+      ? `🔄 24h ${info.txns24Buys ?? 0} buys / ${info.txns24Sells ?? 0} sells`
+      : null;
+
   return [
-    `💵 ${formatPrice(info.priceUsd)}${pct(info.priceChangeH24)}`,
-    `💰 MC ${compactUsd(s.marketCapUsd || info.marketCapUsd)}  ·  💧 Liq ${compactUsd(s.liquidityUsd)}`,
-    `📈 Vol 24h ${compactUsd(s.volume24hUsd)}  ·  🎂 ${Math.round(s.ageMinutes)}m  ·  👑 Top10 ${s.top10HolderPct.toFixed(0)}%`,
+    `💵 ${formatPrice(info.priceUsd)}`,
+    changes.length ? `📊 ${changes.join(" · ")}` : null,
+    `💰 MC ${compactUsd(s.marketCapUsd || info.marketCapUsd)}  ·  💠 FDV ${compactUsd(info.fdvUsd)}`,
+    `💧 Liq ${compactUsd(s.liquidityUsd)}  ·  📈 Vol24h ${compactUsd(s.volume24hUsd)}`,
+    txns,
+    `🎂 ${Math.round(s.ageMinutes)}m old  ·  👑 Top10 ${s.top10HolderPct.toFixed(0)}%`,
     `🔒 LP ${s.lpBurnedOrLocked ? "✅" : "❌"}  ·  Mint ${s.mintAuthorityRevoked ? "✅" : "❌"}  ·  Freeze ${s.freezeAuthorityRevoked ? "✅" : "❌"}`,
-  ];
+  ].filter((x): x is string => x !== null);
+}
+
+// Build a SafetyStats-like view from DexData alone (for individual buys, which skip safety).
+function statsFromInfo(info: DexData): SafetyResult["stats"] {
+  return {
+    marketCapUsd: info.marketCapUsd ?? 0,
+    liquidityUsd: info.liquidityUsd,
+    lpBurnedOrLocked: false,
+    mintAuthorityRevoked: false,
+    freezeAuthorityRevoked: false,
+    top10HolderPct: 0,
+    volume24hUsd: info.volume24hUsd,
+    ageMinutes: info.ageMinutes,
+    holderCount: 0,
+  };
 }
 
 // A single KOL buy — sent the first time a KOL buys a token. No safety filtering.
 export function formatBuy(tokenMint: string, kol: KolView, info: DexData): string {
+  const days = kol.appearances > 0 ? `  ·  📅 ${kol.appearances}d on board` : "";
   return [
     `🟢 <b>KOL BUY</b> · ${tierEmoji[kol.tier]} ${kol.tier}-tier`,
     ``,
-    `👤 <b>${esc(kol.name)}</b> · #${kol.rank} · ${wr(kol.winRate)} · ${sol(kol.pnl)}`,
+    `👤 <b>${esc(kol.name)}</b> · #${kol.rank} · ${Math.round(kol.winRate * 100)}% WR · ${sol(kol.pnl)}${days}`,
     `🪙 ${tokenLabel(tokenMint, info)}`,
-    `💵 ${formatPrice(info.priceUsd)}${pct(info.priceChangeH24)}`,
-    `💰 MC ${compactUsd(info.marketCapUsd)}  ·  💧 Liq ${compactUsd(info.liquidityUsd)}  ·  📈 Vol ${compactUsd(info.volume24hUsd)}`,
-    `🎂 ${Math.round(info.ageMinutes)}m old`,
+    ...tokenStatsLines(info, statsFromInfo(info)).filter((l) => !l.startsWith("🔒")),
     ``,
     `📋 <b>Contract</b> (tap to copy):`,
     `<code>${tokenMint}</code>`,
@@ -95,9 +130,7 @@ export function formatSignal(
   safety: SafetyResult,
   info: DexData
 ): string {
-  const who = kols
-    .map((k) => ` • <b>${esc(k.name)}</b> (#${k.rank} · ${k.tier} · ${wr(k.winRate)})`)
-    .join("\n");
+  const who = kols.map(kolLine).join("\n");
   return [
     `${level.label} <b>SIGNAL</b>`,
     `⚡ ${kols.length} KOLs bought within ${level.windowMin} min`,
@@ -113,6 +146,36 @@ export function formatSignal(
     ``,
     ...linkRows(tokenMint),
   ].join("\n");
+}
+
+// A flagged coin reached a new x-milestone since it was first signalled.
+export function formatMultiplier(
+  tokenMint: string,
+  milestone: number,
+  baselineMcUsd: number,
+  info: DexData
+): string {
+  return [
+    `🚀📈 <b>${milestone}x</b> — ${tokenLabel(tokenMint, info)}`,
+    `flagged at ${compactUsd(baselineMcUsd)} → now ${compactUsd(info.marketCapUsd)}`,
+    ``,
+    ...tokenStatsLines(info, statsFromInfo(info)).filter((l) => !l.startsWith("🔒")),
+    ``,
+    `📋 <b>Contract</b> (tap to copy):`,
+    `<code>${tokenMint}</code>`,
+    ``,
+    ...linkRows(tokenMint),
+  ].join("\n");
+}
+
+export async function dispatchMultiplier(
+  tg: TelegramClient,
+  tokenMint: string,
+  milestone: number,
+  baselineMcUsd: number,
+  info: DexData
+): Promise<void> {
+  await tg.send(formatMultiplier(tokenMint, milestone, baselineMcUsd, info));
 }
 
 // Sends a per-buy notification. Dedup is handled by the pipeline.

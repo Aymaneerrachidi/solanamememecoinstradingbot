@@ -9,6 +9,14 @@ function str(name: string, def = ""): string {
   return process.env[name] ?? def;
 }
 
+// Parse a comma-separated number list, falling back to a default.
+function numList(name: string, def: number[]): number[] {
+  const v = str(name);
+  if (!v) return def;
+  const parsed = v.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n) && n > 0);
+  return parsed.length ? parsed.sort((a, b) => a - b) : def;
+}
+
 // Parse a comma-separated tier list (e.g. "S,A") into a Set. Empty = no tiers.
 function tierSet(name: string): Set<Tier> {
   const s = new Set<Tier>();
@@ -34,6 +42,10 @@ export const config = {
     B: num("CONFLUENCE_B", 3),
     windowMin: num("CONFLUENCE_WINDOW_MIN", 30),
   },
+  // After a coin fires a signal, track it and ping when its market cap hits these multiples
+  // of the market cap at flag time. Stops tracking after `multiplierTrackDays`.
+  multiplierMilestones: numList("MULTIPLIER_MILESTONES", [2, 5, 10, 25, 50, 100]),
+  multiplierTrackDays: num("MULTIPLIER_TRACK_DAYS", 7),
   // Signal ladder: a token fires the STRONGEST level it qualifies for (distinct KOLs within
   // the window). Each level alerts once per token, so a coin can re-alert as it climbs.
   // Edit freely — order doesn't matter, `level` decides strength.

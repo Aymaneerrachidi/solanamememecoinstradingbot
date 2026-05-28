@@ -22,9 +22,9 @@ const dexInfo: DexData = {
 };
 
 const kols: KolRecord[] = [
-  { wallet: "w1", name: "Cented", pnl: 100, winRate: 0.6, rank: 1, tier: "S", updatedAt: 1 },
-  { wallet: "w2", name: "Doji", pnl: 80, winRate: 0.5, rank: 12, tier: "A", updatedAt: 1 },
-  { wallet: "w3", name: "Bull", pnl: 5, winRate: 0.4, rank: 40, tier: "B", updatedAt: 1 },
+  { wallet: "w1", name: "Cented", pnl: 100, winRate: 0.6, rank: 1, tier: "S", appearances: 20, updatedAt: 1 },
+  { wallet: "w2", name: "Doji", pnl: 80, winRate: 0.5, rank: 12, tier: "A", appearances: 15, updatedAt: 1 },
+  { wallet: "w3", name: "Bull", pnl: 5, winRate: 0.4, rank: 40, tier: "B", appearances: 3, updatedAt: 1 },
 ];
 
 function seed() {

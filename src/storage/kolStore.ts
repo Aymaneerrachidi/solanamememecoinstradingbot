@@ -3,8 +3,8 @@ import type { KolRecord } from "../types.js";
 
 export function replaceKols(db: DB, kols: KolRecord[]): void {
   const insert = db.prepare(
-    `INSERT OR REPLACE INTO kols (wallet, name, pnl, winRate, rank, tier, updatedAt)
-     VALUES (@wallet, @name, @pnl, @winRate, @rank, @tier, @updatedAt)`
+    `INSERT OR REPLACE INTO kols (wallet, name, pnl, winRate, rank, tier, appearances, updatedAt)
+     VALUES (@wallet, @name, @pnl, @winRate, @rank, @tier, @appearances, @updatedAt)`
   );
   const tx = db.transaction((rows: KolRecord[]) => {
     db.prepare("DELETE FROM kols").run();

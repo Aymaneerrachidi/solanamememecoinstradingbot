@@ -71,6 +71,7 @@ export function buildKolList(
       winRate: k.winRate,
       rank,
       tier: classifyTier(rank, cutoffs),
+      appearances: k.appearances,
       updatedAt: now,
     };
   });

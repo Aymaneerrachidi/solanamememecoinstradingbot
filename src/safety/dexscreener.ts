@@ -11,17 +11,25 @@ export interface DexData {
   priceUsd?: number;
   marketCapUsd?: number;
   fdvUsd?: number;
+  priceChangeM5?: number;
+  priceChangeH1?: number;
+  priceChangeH6?: number;
   priceChangeH24?: number;
+  txns24Buys?: number;
+  txns24Sells?: number;
+  dexId?: string;
 }
 
 interface DexPair {
   baseToken?: { name?: string; symbol?: string };
+  dexId?: string;
   priceUsd?: string;
   marketCap?: number;
   fdv?: number;
   liquidity?: { usd?: number };
   volume?: { h24?: number };
-  priceChange?: { h24?: number };
+  priceChange?: { m5?: number; h1?: number; h6?: number; h24?: number };
+  txns?: { h24?: { buys?: number; sells?: number } };
   pairCreatedAt?: number; // unix ms
 }
 
@@ -49,6 +57,12 @@ export async function fetchDexData(tokenMint: string, now = Date.now()): Promise
     priceUsd: best.priceUsd ? Number(best.priceUsd) : undefined,
     marketCapUsd: best.marketCap ?? best.fdv,
     fdvUsd: best.fdv,
+    priceChangeM5: best.priceChange?.m5,
+    priceChangeH1: best.priceChange?.h1,
+    priceChangeH6: best.priceChange?.h6,
     priceChangeH24: best.priceChange?.h24,
+    txns24Buys: best.txns?.h24?.buys,
+    txns24Sells: best.txns?.h24?.sells,
+    dexId: best.dexId,
   };
 }
