@@ -61,13 +61,13 @@ export interface WatchedWallet {
   tier: Tier;
 }
 
-// Standard-RPC polling: per wallet, fetch recent signatures, then BATCH-fetch the parsed
-// transactions for the new+recent ones in a single request. Spacing requests by `gapMs`
-// keeps us under the RPC rate limit (≈2 calls per wallet instead of 1-per-signature).
+// Standard-RPC polling: per wallet, fetch recent signatures, then fetch the parsed
+// transaction for each new+recent one (single calls — batch RPC is paid-only on Helius).
+// Seeding on first poll avoids a startup burst; `gapMs` spaces requests for rate limits.
 export function createRpcMonitor(
   conn: Connection,
   getWallets: () => WatchedWallet[],
-  gapMs = 250,
+  gapMs = 200,
   lookbackMs = 10 * 60_000
 ): WalletMonitor {
   const lastSig = new Map<string, string>();
@@ -88,22 +88,17 @@ export function createRpcMonitor(
           // backfill (avoids a large request burst on startup). React to new buys from here on.
           if (prevTop === undefined) continue;
 
-          // Collect only new (unseen), successful, recent signatures.
-          const toFetch: string[] = [];
           for (const s of sigs) {
             if (s.signature === prevTop) break; // reached already-processed history
             if (s.err) continue;
             if ((s.blockTime ?? 0) * 1000 < cutoff) continue; // too old to care about
-            toFetch.push(s.signature);
-          }
-          if (toFetch.length === 0) continue;
 
-          // One batched request for all new signatures of this wallet.
-          const txs = await conn.getParsedTransactions(toFetch, { maxSupportedTransactionVersion: 0 });
-          for (const tx of txs) {
+            const tx = await conn.getParsedTransaction(s.signature, {
+              maxSupportedTransactionVersion: 0,
+            });
             if (tx) all.push(...parseBuysFromParsedTx(tx as ParsedTxLike, w.wallet, w.tier));
+            if (gapMs > 0) await sleep(gapMs);
           }
-          if (gapMs > 0) await sleep(gapMs);
         } catch (err) {
           logger.warn(`monitor poll failed for ${w.wallet}`, err);
         }
