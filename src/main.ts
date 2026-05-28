@@ -1,4 +1,5 @@
 import { Connection } from "@solana/web3.js";
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
 import { openDb } from "./storage/db.js";
@@ -23,7 +24,45 @@ import { alertKolScrape, noteBuysCycle, runHealthChecks } from "./health/health.
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const LOCK_FILE = ".bot.lock";
+
+// Singleton guard: refuses to start if another instance is already running. Prevents the
+// "multiple bots hammering the same Helius key → 429 storm" gremlin.
+function acquireLock(): void {
+  if (existsSync(LOCK_FILE)) {
+    const prevPid = Number(readFileSync(LOCK_FILE, "utf8").trim());
+    if (prevPid > 0) {
+      try {
+        process.kill(prevPid, 0); // throws if the PID isn't alive
+        logger.error(
+          `Another bot instance (PID ${prevPid}) is already running. Stop it first ` +
+            `(Ctrl+C in its terminal, or kill it), then retry. Delete ${LOCK_FILE} if you're sure.`
+        );
+        process.exit(1);
+      } catch {
+        // Stale lock — previous process is gone. Take it over.
+        logger.warn(`Found stale lock from PID ${prevPid} (no longer running); claiming it.`);
+      }
+    }
+  }
+  writeFileSync(LOCK_FILE, String(process.pid));
+  const release = () => {
+    try {
+      if (existsSync(LOCK_FILE) && readFileSync(LOCK_FILE, "utf8").trim() === String(process.pid)) {
+        unlinkSync(LOCK_FILE);
+      }
+    } catch {
+      /* best-effort */
+    }
+  };
+  process.on("exit", release);
+  process.on("SIGINT", () => { release(); process.exit(0); });
+  process.on("SIGTERM", () => { release(); process.exit(0); });
+}
+
 async function main() {
+  acquireLock();
+
   if (!config.heliusApiKey || !config.telegramBotToken || !config.telegramChatId) {
     logger.error("Missing required env: HELIUS_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID");
     process.exit(1);
