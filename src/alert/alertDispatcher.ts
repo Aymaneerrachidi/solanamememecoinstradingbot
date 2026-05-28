@@ -10,8 +10,9 @@ export interface KolView {
   rank: number;
   tier: Tier;
   winRate: number; // 0-1
-  pnl: number; // SOL
+  pnl: number; // SOL (most-recent daily)
   appearances: number; // days on the leaderboard in the history window
+  qualityScore: number; // 0..1 — blends monthly + weekly + daily perf
 }
 
 const esc = (s: string) =>
@@ -48,10 +49,11 @@ function changePart(label: string, n?: number): string | null {
   return `${label} ${n >= 0 ? "+" : ""}${n.toFixed(0)}%`;
 }
 
-// One compact line per KOL: rank, tier, win rate, PnL, days-on-board.
+// One compact line per KOL: rank, tier, win rate, quality score, PnL, days-on-board.
 function kolLine(k: KolView): string {
   const days = k.appearances > 0 ? ` · 📅 ${k.appearances}d` : "";
-  return ` • <b>${esc(k.name)}</b> #${k.rank}·${k.tier} · ${Math.round(k.winRate * 100)}% WR · ${sol(k.pnl)}${days}`;
+  const qs = k.qualityScore > 0 ? ` · qs ${k.qualityScore.toFixed(2)}` : "";
+  return ` • <b>${esc(k.name)}</b> #${k.rank}·${k.tier} · ${Math.round(k.winRate * 100)}% WR${qs} · ${sol(k.pnl)}${days}`;
 }
 
 // Quick-action link rows (chart / trade / explorer).
@@ -108,10 +110,11 @@ function statsFromInfo(info: DexData): SafetyResult["stats"] {
 // A single KOL buy — sent the first time a KOL buys a token. No safety filtering.
 export function formatBuy(tokenMint: string, kol: KolView, info: DexData): string {
   const days = kol.appearances > 0 ? `  ·  📅 ${kol.appearances}d on board` : "";
+  const qs = kol.qualityScore > 0 ? `  ·  qs ${kol.qualityScore.toFixed(2)}` : "";
   return [
     `🟢 <b>KOL BUY</b> · ${tierEmoji[kol.tier]} ${kol.tier}-tier`,
     ``,
-    `👤 <b>${esc(kol.name)}</b> · #${kol.rank} · ${Math.round(kol.winRate * 100)}% WR · ${sol(kol.pnl)}${days}`,
+    `👤 <b>${esc(kol.name)}</b> · #${kol.rank} · ${Math.round(kol.winRate * 100)}% WR${qs} · ${sol(kol.pnl)}${days}`,
     `🪙 ${tokenLabel(tokenMint, info)}`,
     ...tokenStatsLines(info, statsFromInfo(info)).filter((l) => !l.startsWith("🔒")),
     ``,
@@ -131,9 +134,10 @@ export function formatSignal(
   info: DexData
 ): string {
   const who = kols.map(kolLine).join("\n");
+  const totalWeight = kols.reduce((sum, k) => sum + (k.qualityScore || 0), 0);
   return [
     `${level.label} <b>SIGNAL</b>`,
-    `⚡ ${kols.length} KOLs bought within ${level.windowMin} min`,
+    `⚡ ${kols.length} KOLs · quality <b>${totalWeight.toFixed(2)}</b> · within ${level.windowMin} min`,
     ``,
     `🪙 ${tokenLabel(tokenMint, info)}`,
     ...tokenStatsLines(info, safety.stats),

@@ -55,12 +55,22 @@ const TIER_ORDER: Record<Tier, number> = { S: 3, A: 2, B: 1 };
 
 function kolView(db: DB, wallet: string, fallbackTier: Tier): KolView {
   const k = getKol(db, wallet);
-  if (k) return { name: k.name, rank: k.rank, tier: k.tier, winRate: k.winRate, pnl: k.pnl, appearances: k.appearances };
-  return { name: wallet.slice(0, 6), rank: 0, tier: fallbackTier, winRate: 0, pnl: 0, appearances: 0 };
+  if (k)
+    return {
+      name: k.name, rank: k.rank, tier: k.tier, winRate: k.winRate,
+      pnl: k.pnl, appearances: k.appearances, qualityScore: k.qualityScore,
+    };
+  return {
+    name: wallet.slice(0, 6), rank: 0, tier: fallbackTier, winRate: 0,
+    pnl: 0, appearances: 0, qualityScore: 0,
+  };
 }
 
 function kolViewFromRecord(k: KolRecord): KolView {
-  return { name: k.name, rank: k.rank, tier: k.tier, winRate: k.winRate, pnl: k.pnl, appearances: k.appearances };
+  return {
+    name: k.name, rank: k.rank, tier: k.tier, winRate: k.winRate,
+    pnl: k.pnl, appearances: k.appearances, qualityScore: k.qualityScore,
+  };
 }
 
 // Quality-weighted "weight" for a wallet — falls back to a small default for unknowns so

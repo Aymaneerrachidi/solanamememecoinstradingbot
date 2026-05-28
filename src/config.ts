@@ -58,15 +58,16 @@ export const config = {
     muteMin: num("HEALTH_MUTE_MIN", 60),
   },
   // Signal ladder: a token fires the STRONGEST level it qualifies for. We sum the
-  // QUALITY SCORE (0..1, derived from monthly+weekly+daily PnL and win rate) of the distinct
-  // KOLs that bought it within the window — so one elite KOL can outweigh several weak ones.
-  // Each level alerts once per token, so a coin can re-alert as it climbs.
-  // Edit freely — `level` decides strength ordering.
+  // QUALITY SCORE of distinct KOLs in the window — one elite KOL can outweigh several weak.
+  // Two parallel ladders: 5-minute (early/fast) and 15-minute (sustained). 5-minute levels
+  // get higher priority because early = more valuable for memecoins.
   signalLevels: [
-    { level: 1, label: "🟢 GOOD", minWeight: 0.8, windowMin: 15 },
-    { level: 2, label: "🔵 STRONG", minWeight: 1.5, windowMin: 15 },
-    { level: 3, label: "🟠 VERY STRONG", minWeight: 1.5, windowMin: 5 },
-    { level: 4, label: "🔴 EXTREME", minWeight: 2.5, windowMin: 15 },
+    { level: 1, label: "🟢 GOOD", minWeight: num("SIGNAL_15M_GOOD", 0.8), windowMin: 15 },
+    { level: 2, label: "🔵 STRONG", minWeight: num("SIGNAL_15M_STRONG", 1.5), windowMin: 15 },
+    { level: 3, label: "🔴 EXTREME", minWeight: num("SIGNAL_15M_EXTREME", 2.5), windowMin: 15 },
+    { level: 4, label: "🟡 EARLY-GOOD", minWeight: num("SIGNAL_5M_GOOD", 0.6), windowMin: 5 },
+    { level: 5, label: "🟠 EARLY-STRONG", minWeight: num("SIGNAL_5M_STRONG", 1.2), windowMin: 5 },
+    { level: 6, label: "💎 EARLY-EXTREME", minWeight: num("SIGNAL_5M_EXTREME", 2.0), windowMin: 5 },
   ],
   // Which tiers send a message on EVERY individual buy. Blank = off (only ladder signals).
   // e.g. "S" = ping only on top-tier whale buys; "S,A,B" = every buy.
