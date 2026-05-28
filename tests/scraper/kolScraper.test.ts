@@ -1,21 +1,35 @@
 import { describe, it, expect } from "vitest";
 import { parseKolscanHtml } from "../../src/scraper/kolScraper.js";
 
-const SAMPLE_ROW = `<a style="display:flex" href="/account/CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o?timeframe=1"><div></div><h1 style="font-size:20px;line-height:1;font-weight:550">Cented</h1></a><p class="cursor-pointer remove-mobile">CyaE1V</p><div class="remove-mobile" style="x"><p style="color:var(--buy-color);margin-right:2px">115</p>/<p style="color:var(--sell-color);margin-left:2px">98</p></div><div class="leaderboard_totalProfitNum__HzfFO" style="color:var(--buy-color)"><h1>+286.63<!-- --> Sol</h1><h1>(<!-- -->$24,329.5<!-- -->)</h1></div>`;
+// kolscan embeds the leaderboard payload as JSON inside an RSC chunk, with all three
+// timeframes interleaved (1=daily, 7=weekly, 30=monthly). The quotes are JS-escaped.
+const SAMPLE = `
+... lots of preceding HTML ...
+\\"wallet_address\\":\\"CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o\\",\\"name\\":\\"Cented\\",\\"telegram\\":null,\\"twitter\\":\\"https://x.com/Cented7\\",\\"profit\\":213.06,\\"wins\\":126,\\"losses\\":87,\\"timeframe\\":1},
+\\"wallet_address\\":\\"5ZuV8eqkvzYFVEKbLvGBdexL2tFv7E5BCd2HZpjqbdg\\",\\"name\\":\\"Doji\\",\\"telegram\\":null,\\"twitter\\":\\"x\\",\\"profit\\":54.23,\\"wins\\":12,\\"losses\\":29,\\"timeframe\\":1},
+\\"wallet_address\\":\\"CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o\\",\\"name\\":\\"Cented\\",\\"telegram\\":null,\\"twitter\\":\\"x\\",\\"profit\\":4870.57,\\"wins\\":2856,\\"losses\\":2626,\\"timeframe\\":30}
+`;
 
 describe("parseKolscanHtml", () => {
-  it("extracts wallet, name, signed SOL pnl, and win rate from a row", () => {
-    const kols = parseKolscanHtml(SAMPLE_ROW);
-    expect(kols).toHaveLength(1);
+  it("extracts daily KOLs in pnl-descending order", () => {
+    const kols = parseKolscanHtml(SAMPLE, "daily");
+    expect(kols).toHaveLength(2);
     expect(kols[0]).toEqual({
       wallet: "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
       name: "Cented",
-      pnl: 286.63,
-      winRate: 0.54, // 115 / (115 + 98)
+      pnl: 213.06,
+      winRate: 0.592, // 126 / (126+87)
     });
+    expect(kols[1].wallet).toBe("5ZuV8eqkvzYFVEKbLvGBdexL2tFv7E5BCd2HZpjqbdg");
   });
 
-  it("returns empty array when the HTML has no rows", () => {
-    expect(parseKolscanHtml("<html>nothing here</html>")).toEqual([]);
+  it("filters by timeframe — monthly returns only timeframe=30 entries", () => {
+    const monthly = parseKolscanHtml(SAMPLE, "monthly");
+    expect(monthly).toHaveLength(1);
+    expect(monthly[0].pnl).toBe(4870.57);
+  });
+
+  it("returns empty array when the HTML has no matches", () => {
+    expect(parseKolscanHtml("<html>nothing here</html>", "weekly")).toEqual([]);
   });
 });

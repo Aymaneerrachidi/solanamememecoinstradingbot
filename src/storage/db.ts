@@ -14,6 +14,7 @@ export function openDb(path: string): DB {
       rank INTEGER NOT NULL,
       tier TEXT NOT NULL,
       appearances INTEGER NOT NULL DEFAULT 0,
+      qualityScore REAL NOT NULL DEFAULT 0,
       updatedAt INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS buys (
@@ -35,7 +36,8 @@ export function openDb(path: string): DB {
       winRate REAL NOT NULL,
       rank INTEGER NOT NULL,
       day INTEGER NOT NULL,
-      PRIMARY KEY (wallet, day)
+      timeframe TEXT NOT NULL DEFAULT 'daily',
+      PRIMARY KEY (wallet, day, timeframe)
     );
     CREATE INDEX IF NOT EXISTS idx_snap_day ON kol_snapshots (day);
     CREATE TABLE IF NOT EXISTS tracked_tokens (
@@ -85,10 +87,36 @@ export function openDb(path: string): DB {
     );
   `);
 
-  // Migration: add `appearances` to kols tables created before that column existed.
+  // Migrations for older DBs ---------------------------------------------------------
   const kolCols = db.prepare("PRAGMA table_info(kols)").all() as { name: string }[];
   if (!kolCols.some((c) => c.name === "appearances")) {
     db.exec("ALTER TABLE kols ADD COLUMN appearances INTEGER NOT NULL DEFAULT 0");
   }
+  if (!kolCols.some((c) => c.name === "qualityScore")) {
+    db.exec("ALTER TABLE kols ADD COLUMN qualityScore REAL NOT NULL DEFAULT 0");
+  }
+  // kol_snapshots: add `timeframe` column + rebuild the primary key to include it.
+  const snapCols = db.prepare("PRAGMA table_info(kol_snapshots)").all() as { name: string }[];
+  if (snapCols.length > 0 && !snapCols.some((c) => c.name === "timeframe")) {
+    db.exec(`
+      ALTER TABLE kol_snapshots RENAME TO kol_snapshots_old;
+      CREATE TABLE kol_snapshots (
+        wallet TEXT NOT NULL,
+        name TEXT NOT NULL,
+        pnl REAL NOT NULL,
+        winRate REAL NOT NULL,
+        rank INTEGER NOT NULL,
+        day INTEGER NOT NULL,
+        timeframe TEXT NOT NULL DEFAULT 'daily',
+        PRIMARY KEY (wallet, day, timeframe)
+      );
+      INSERT INTO kol_snapshots (wallet, name, pnl, winRate, rank, day, timeframe)
+        SELECT wallet, name, pnl, winRate, rank, day, 'daily' FROM kol_snapshots_old;
+      DROP TABLE kol_snapshots_old;
+      CREATE INDEX IF NOT EXISTS idx_snap_day ON kol_snapshots (day);
+    `);
+  }
+  // Index that depends on the `timeframe` column — must be created AFTER the migration above.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_snap_tf ON kol_snapshots (timeframe)");
   return db;
 }

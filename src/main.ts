@@ -3,10 +3,11 @@ import { config } from "./config.js";
 import { logger } from "./logger.js";
 import { openDb } from "./storage/db.js";
 import { getAllKols, replaceKols } from "./storage/kolStore.js";
-import { manualFetcher, kolscanFetcher } from "./scraper/kolScraper.js";
+import { manualFetcher, fetchKolscanBoards } from "./scraper/kolScraper.js";
 import {
   recordSnapshot,
   getSnapshotsSince,
+  getLatestSnapshotsByTimeframe,
   pruneSnapshots,
   epochDay,
 } from "./storage/snapshotStore.js";
@@ -32,40 +33,55 @@ async function main() {
   const conn = new Connection(config.rpcUrl, "confirmed");
   const tg = createTelegramClient(config.telegramBotToken, config.telegramChatId);
 
-  const fetchRaw = config.kolManualListPath
-    ? manualFetcher(config.kolManualListPath)
-    : kolscanFetcher();
+  const manualOnly = config.kolManualListPath ? manualFetcher(config.kolManualListPath) : null;
 
-  // Pulls today's kolscan leaderboard, stores it as a daily snapshot, then rebuilds the
-  // tracked list from accumulated history (weekly + monthly consistency, recent-weighted).
+  // Pulls today's leaderboards (daily, weekly, monthly) from kolscan, snapshots each, then
+  // rebuilds the tracked list with a quality score blending all three timeframes.
   async function refreshKols() {
     const now = Date.now();
     const today = epochDay(now);
-    let raw;
+
+    // Source the three boards (or fall back to a manual daily-only list).
+    let daily: Awaited<ReturnType<typeof fetchKolscanBoards>>["daily"] = [];
+    let weekly: typeof daily = [];
+    let monthly: typeof daily = [];
     try {
-      raw = await fetchRaw();
+      if (manualOnly) {
+        daily = await manualOnly();
+      } else {
+        const boards = await fetchKolscanBoards();
+        daily = boards.daily;
+        weekly = boards.weekly;
+        monthly = boards.monthly;
+      }
     } catch (err) {
       logger.warn("KOL scrape failed; keeping current list", err);
       await alertKolScrape(tg, config.health.muteMin, "failed", err);
       return;
     }
-    if (raw.length === 0) {
-      logger.warn("KOL scrape returned 0; keeping current list");
+    if (daily.length === 0 && weekly.length === 0 && monthly.length === 0) {
+      logger.warn("KOL scrape returned 0 across all timeframes; keeping current list");
       await alertKolScrape(tg, config.health.muteMin, "empty");
       return;
     }
 
-    recordSnapshot(db, raw, today);
+    if (daily.length > 0) recordSnapshot(db, daily, today, "daily");
+    if (weekly.length > 0) recordSnapshot(db, weekly, today, "weekly");
+    if (monthly.length > 0) recordSnapshot(db, monthly, today, "monthly");
     pruneSnapshots(db, today - config.kolHistoryDays);
 
-    const snaps = getSnapshotsSince(db, today - config.kolHistoryDays);
-    const scored = scoreConsistency(snaps, today, raw.length);
+    const sinceDay = today - config.kolHistoryDays;
+    const scored = scoreConsistency({
+      dailySnapshots: getSnapshotsSince(db, sinceDay, "daily"),
+      latestDaily: getLatestSnapshotsByTimeframe(db, "daily", sinceDay),
+      latestWeekly: getLatestSnapshotsByTimeframe(db, "weekly", sinceDay),
+      latestMonthly: getLatestSnapshotsByTimeframe(db, "monthly", sinceDay),
+    });
     const kols = buildKolList(scored, config.tiers, now, config.maxKols);
     replaceKols(db, kols);
 
-    const days = new Set(snaps.map((s) => s.day)).size;
     logger.info(
-      `KOLs refreshed: tracking ${kols.length} (from ${scored.length} seen over ${days} day(s) of history)`
+      `KOLs refreshed: tracking ${kols.length} (D:${daily.length} W:${weekly.length} M:${monthly.length})`
     );
   }
 

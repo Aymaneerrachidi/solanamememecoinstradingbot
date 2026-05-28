@@ -10,40 +10,74 @@ export function manualFetcher(path: string): () => Promise<RawKol[]> {
   };
 }
 
-// Each leaderboard row is an /account/<wallet> link whose anchor ends with the display
-// name, followed by buy/sell trade counts and a signed SOL profit figure.
-const ROW_RE =
-  /\/account\/([1-9A-HJ-NP-Za-km-z]{32,44})\?timeframe=1"[\s\S]*?font-weight:550">([^<]+)<\/h1><\/a>[\s\S]*?buy-color\)[^>]*>(\d+)<\/p>\/<p[^>]*sell-color\)[^>]*>(\d+)<\/p>[\s\S]*?totalProfitNum__[^>]*>[\s\S]*?<h1>([+-]?[\d,.]+)<!-- --> Sol<\/h1>/g;
+// kolscan embeds all THREE timeframes (daily/weekly/monthly) in the same HTML payload.
+// Each row's account link carries `timeframe=1` (daily), `timeframe=7` (weekly), or
+// `timeframe=30` (monthly), and the row's PnL/win-rate values differ per timeframe.
+export type Timeframe = "daily" | "weekly" | "monthly";
 
-export function parseKolscanHtml(html: string): RawKol[] {
+const TIMEFRAME_PARAM: Record<Timeframe, string> = {
+  daily: "1",
+  weekly: "7",
+  monthly: "30",
+};
+
+// kolscan embeds the full leaderboard payload as JSON objects inside an RSC chunk:
+//   {"wallet_address":"...","name":"...","telegram":...,"twitter":"...","profit":N,"wins":N,"losses":N,"timeframe":N}
+// Quotes are JS-escaped (\"). All three timeframes (1=daily, 7=weekly, 30=monthly) appear
+// in the same payload — we filter by the `timeframe` field.
+const KOL_JSON_RE =
+  /\\"wallet_address\\":\\"([1-9A-HJ-NP-Za-km-z]{32,44})\\"[^}]*?\\"name\\":\\"([^"\\]+)\\"[^}]*?\\"profit\\":([+-]?[\d.]+)[^}]*?\\"wins\\":(\d+)[^}]*?\\"losses\\":(\d+)[^}]*?\\"timeframe\\":(\d+)/g;
+
+export function parseKolscanHtml(html: string, timeframe: Timeframe = "daily"): RawKol[] {
+  const tfNum = TIMEFRAME_PARAM[timeframe];
   const kols: RawKol[] = [];
-  const re = new RegExp(ROW_RE);
+  const re = new RegExp(KOL_JSON_RE);
   let m: RegExpExecArray | null;
   while ((m = re.exec(html)) !== null) {
-    const [, wallet, name, buys, sells] = m;
-    const wins = Number(buys);
-    const losses = Number(sells);
+    const [, wallet, name, profit, winsStr, lossesStr, tf] = m;
+    if (tf !== tfNum) continue;
+    const wins = Number(winsStr);
+    const losses = Number(lossesStr);
     kols.push({
       wallet,
       name: name.trim(),
-      pnl: Number(m[5].replace(/,/g, "")),
+      pnl: Number(profit),
       winRate: wins + losses > 0 ? +(wins / (wins + losses)).toFixed(3) : 0,
     });
   }
-  return kols;
+  // Order by pnl descending (rank 1 = highest profit) so snapshot rank reflects leaderboard rank.
+  return kols.sort((a, b) => b.pnl - a.pnl);
 }
 
-// Source: kolscan.io leaderboard (server-rendered HTML; parsed by row).
+export interface KolscanBoards {
+  daily: RawKol[];
+  weekly: RawKol[];
+  monthly: RawKol[];
+}
+
+// One HTTP fetch, three datasets — they're all baked into kolscan's SSR payload.
+export async function fetchKolscanBoards(): Promise<KolscanBoards> {
+  const url = "https://kolscan.io/leaderboard";
+  const res = await retry(() => fetch(url, { headers: { "user-agent": "Mozilla/5.0" } }), {
+    attempts: 3,
+    baseDelayMs: 500,
+  });
+  if (!res.ok) throw new Error(`kolscan ${res.status}`);
+  const html = await res.text();
+  const daily = parseKolscanHtml(html, "daily");
+  const weekly = parseKolscanHtml(html, "weekly");
+  const monthly = parseKolscanHtml(html, "monthly");
+  if (daily.length === 0 && weekly.length === 0 && monthly.length === 0) {
+    throw new Error("kolscan: parsed 0 KOLs across all timeframes (page structure may have changed)");
+  }
+  return { daily, weekly, monthly };
+}
+
+// Back-compat: the manual-list path still returns a flat RawKol[].
 export function kolscanFetcher(): () => Promise<RawKol[]> {
   return async () => {
-    const url = "https://kolscan.io/leaderboard";
-    const res = await retry(() => fetch(url, { headers: { "user-agent": "Mozilla/5.0" } }), {
-      attempts: 3,
-      baseDelayMs: 500,
-    });
-    if (!res.ok) throw new Error(`kolscan ${res.status}`);
-    const kols = parseKolscanHtml(await res.text());
-    if (kols.length === 0) throw new Error("kolscan: parsed 0 KOLs (page structure may have changed)");
-    return kols;
+    const boards = await fetchKolscanBoards();
+    if (boards.daily.length === 0) throw new Error("kolscan: parsed 0 daily KOLs");
+    return boards.daily;
   };
 }

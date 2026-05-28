@@ -2,55 +2,59 @@ import { describe, it, expect } from "vitest";
 import { scoreConsistency, buildKolList } from "../../src/engine/consistency.js";
 import type { Snapshot } from "../../src/storage/snapshotStore.js";
 
-function snap(wallet: string, rank: number, day: number, name = wallet): Snapshot {
-  return { wallet, name, pnl: 100 - rank, winRate: 0.5, rank, day };
+function snap(wallet: string, rank: number, day: number, pnl = 100, winRate = 0.5, timeframe: "daily" | "weekly" | "monthly" = "daily"): Snapshot {
+  return { wallet, name: wallet, pnl, winRate, rank, day, timeframe };
 }
 
 describe("scoreConsistency", () => {
-  it("ranks a consistent performer above a one-day fluke", () => {
-    const now = 100;
-    const snaps: Snapshot[] = [
-      // consistent: rank ~5 on many recent days
-      snap("consistent", 5, 100), snap("consistent", 6, 99), snap("consistent", 4, 98), snap("consistent", 5, 97),
-      // fluke: rank 1 once, long ago
-      snap("fluke", 1, 80),
+  it("an elite KOL on ALL 3 timeframes outscores a daily-only one-day fluke", () => {
+    const elite = "elite";
+    const fluke = "fluke";
+    const dailyToday = snap(elite, 3, 100, 150, 0.6);
+    const weekly = snap(elite, 4, 100, 700, 0.55, "weekly");
+    const monthly = snap(elite, 5, 100, 3000, 0.5, "monthly");
+    const flukeDaily = snap(fluke, 1, 100, 200, 0.5);
+    const dailyHistory: Snapshot[] = [
+      dailyToday, snap(elite, 3, 99, 140), snap(elite, 4, 98, 130), snap(elite, 5, 97, 125),
+      flukeDaily, // only one day
     ];
-    const scored = scoreConsistency(snaps, now, 50);
-    expect(scored[0].wallet).toBe("consistent");
-    expect(scored.find((s) => s.wallet === "consistent")!.appearances).toBe(4);
+    const scored = scoreConsistency({
+      dailySnapshots: dailyHistory,
+      latestDaily: [dailyToday, flukeDaily],
+      latestWeekly: [weekly],
+      latestMonthly: [monthly],
+    });
+    expect(scored[0].wallet).toBe(elite);
+    expect(scored[0].qualityScore).toBeGreaterThan(scored.find((s) => s.wallet === fluke)!.qualityScore);
   });
 
-  it("weights recent days more than older ones", () => {
-    const now = 100;
-    // same rank, but one KOL's appearances are recent, the other's are >30 days old
-    const snaps: Snapshot[] = [
-      snap("recent", 10, 100), snap("recent", 10, 99),
-      snap("old", 10, 60), snap("old", 10, 59),
-    ];
-    const scored = scoreConsistency(snaps, now, 50);
-    expect(scored[0].wallet).toBe("recent");
-  });
-
-  it("uses the most recent snapshot for display fields", () => {
-    const snaps: Snapshot[] = [
-      { wallet: "w", name: "OldName", pnl: 10, winRate: 0.3, rank: 5, day: 90 },
-      { wallet: "w", name: "NewName", pnl: 50, winRate: 0.7, rank: 3, day: 99 },
-    ];
-    const scored = scoreConsistency(snaps, 100, 50);
-    expect(scored[0]).toMatchObject({ name: "NewName", pnl: 50, winRate: 0.7 });
+  it("a single timeframe with low PnL scores low; presence bonus + multi-timeframe wins", () => {
+    const a = scoreConsistency({
+      dailySnapshots: [snap("a", 25, 100, 20)],
+      latestDaily: [snap("a", 25, 100, 20)],
+      latestWeekly: [snap("a", 25, 100, 100, 0.5, "weekly")],
+      latestMonthly: [snap("a", 25, 100, 500, 0.5, "monthly")],
+    });
+    const b = scoreConsistency({
+      dailySnapshots: [snap("b", 25, 100, 20)],
+      latestDaily: [snap("b", 25, 100, 20)],
+      latestWeekly: [],
+      latestMonthly: [],
+    });
+    expect(a[0].qualityScore).toBeGreaterThan(b[0].qualityScore);
   });
 });
 
 describe("buildKolList", () => {
-  it("assigns rank + tier by score order and caps at maxKols", () => {
+  it("assigns rank + tier by qualityScore order and caps at maxKols", () => {
     const scored = [
-      { wallet: "a", name: "a", pnl: 9, winRate: 0.5, score: 300, appearances: 5 },
-      { wallet: "b", name: "b", pnl: 8, winRate: 0.5, score: 200, appearances: 4 },
-      { wallet: "c", name: "c", pnl: 7, winRate: 0.5, score: 100, appearances: 3 },
+      { wallet: "a", name: "a", pnl: 9, winRate: 0.5, qualityScore: 0.9, appearances: 5 },
+      { wallet: "b", name: "b", pnl: 8, winRate: 0.5, qualityScore: 0.5, appearances: 4 },
+      { wallet: "c", name: "c", pnl: 7, winRate: 0.5, qualityScore: 0.2, appearances: 3 },
     ];
     const list = buildKolList(scored, { sRankMax: 1, aRankMax: 2 }, 1000, 2);
-    expect(list).toHaveLength(2); // capped
-    expect(list[0]).toMatchObject({ wallet: "a", rank: 1, tier: "S" });
-    expect(list[1]).toMatchObject({ wallet: "b", rank: 2, tier: "A" });
+    expect(list).toHaveLength(2);
+    expect(list[0]).toMatchObject({ wallet: "a", rank: 1, tier: "S", qualityScore: 0.9 });
+    expect(list[1]).toMatchObject({ wallet: "b", rank: 2, tier: "A", qualityScore: 0.5 });
   });
 });

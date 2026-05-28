@@ -2,38 +2,37 @@ import { describe, it, expect } from "vitest";
 import { detectSignalLevel, type SignalLevel } from "../../src/engine/signalLevels.js";
 
 const levels: SignalLevel[] = [
-  { level: 1, label: "🟢 GOOD", minKols: 2, windowMin: 5 },
-  { level: 2, label: "🔵 STRONG", minKols: 4, windowMin: 15 },
-  { level: 3, label: "🟠 VERY STRONG", minKols: 4, windowMin: 5 },
-  { level: 4, label: "🔴 EXTREME", minKols: 6, windowMin: 15 },
+  { level: 1, label: "🟢 GOOD", minWeight: 0.8, windowMin: 15 },
+  { level: 2, label: "🔵 STRONG", minWeight: 1.5, windowMin: 15 },
+  { level: 3, label: "🟠 VERY STRONG", minWeight: 1.5, windowMin: 5 },
+  { level: 4, label: "🔴 EXTREME", minWeight: 2.5, windowMin: 15 },
 ];
 
-// Helper: fixed distinct counts per window.
-const within = (counts: Record<number, number>) => (w: number) => counts[w] ?? 0;
+// Helper: fixed weight values per window.
+const weight = (per: Record<number, number>) => (w: number) => per[w] ?? 0;
 
-describe("detectSignalLevel", () => {
+describe("detectSignalLevel (weighted)", () => {
   it("returns null when nothing qualifies", () => {
-    expect(detectSignalLevel(levels, within({ 5: 1, 15: 1 }))).toBeNull();
+    expect(detectSignalLevel(levels, weight({ 5: 0.4, 15: 0.5 }))).toBeNull();
   });
 
-  it("fires GOOD for 2 KOLs in 5 min", () => {
-    expect(detectSignalLevel(levels, within({ 5: 2, 15: 2 }))?.label).toBe("🟢 GOOD");
+  it("fires GOOD when summed weight crosses 0.8 in 15 min", () => {
+    expect(detectSignalLevel(levels, weight({ 5: 0.4, 15: 1.0 }))?.label).toBe("🟢 GOOD");
   });
 
-  it("fires STRONG for 4 KOLs in 15 min (but not 5 min)", () => {
-    expect(detectSignalLevel(levels, within({ 5: 2, 15: 4 }))?.label).toBe("🔵 STRONG");
+  it("fires STRONG when weight 1.5 in 15 min", () => {
+    expect(detectSignalLevel(levels, weight({ 5: 1.0, 15: 1.6 }))?.label).toBe("🔵 STRONG");
   });
 
-  it("upgrades to VERY STRONG when the 4 KOLs landed within 5 min", () => {
-    expect(detectSignalLevel(levels, within({ 5: 4, 15: 4 }))?.label).toBe("🟠 VERY STRONG");
+  it("upgrades to VERY STRONG when the 1.5 weight landed within 5 min", () => {
+    expect(detectSignalLevel(levels, weight({ 5: 1.6, 15: 1.6 }))?.label).toBe("🟠 VERY STRONG");
   });
 
-  it("fires EXTREME for 6 KOLs in 15 min", () => {
-    expect(detectSignalLevel(levels, within({ 5: 4, 15: 6 }))?.label).toBe("🔴 EXTREME");
+  it("fires EXTREME for combined weight 2.5+ in 15 min", () => {
+    expect(detectSignalLevel(levels, weight({ 5: 1.6, 15: 2.7 }))?.label).toBe("🔴 EXTREME");
   });
 
   it("always returns the strongest matching level", () => {
-    // qualifies for GOOD, STRONG, VERY STRONG, and EXTREME — must pick EXTREME.
-    expect(detectSignalLevel(levels, within({ 5: 6, 15: 8 }))?.level).toBe(4);
+    expect(detectSignalLevel(levels, weight({ 5: 3.0, 15: 3.5 }))?.level).toBe(4);
   });
 });

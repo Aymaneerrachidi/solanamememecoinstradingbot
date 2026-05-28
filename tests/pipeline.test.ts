@@ -7,8 +7,8 @@ import type { DexData } from "../src/safety/dexscreener.js";
 import type { SignalLevel } from "../src/engine/signalLevels.js";
 
 const signalLevels: SignalLevel[] = [
-  { level: 1, label: "🟢 GOOD", minKols: 2, windowMin: 5 },
-  { level: 2, label: "🔴 EXTREME", minKols: 3, windowMin: 5 },
+  { level: 1, label: "🟢 GOOD", minWeight: 0.6, windowMin: 5 },
+  { level: 2, label: "🔴 EXTREME", minWeight: 1.2, windowMin: 5 },
 ];
 
 const passSafety: SafetyResult = {
@@ -22,9 +22,9 @@ const dexInfo: DexData = {
 };
 
 const kols: KolRecord[] = [
-  { wallet: "w1", name: "Cented", pnl: 100, winRate: 0.6, rank: 1, tier: "S", appearances: 20, updatedAt: 1 },
-  { wallet: "w2", name: "Doji", pnl: 80, winRate: 0.5, rank: 12, tier: "A", appearances: 15, updatedAt: 1 },
-  { wallet: "w3", name: "Bull", pnl: 5, winRate: 0.4, rank: 40, tier: "B", appearances: 3, updatedAt: 1 },
+  { wallet: "w1", name: "Cented", pnl: 100, winRate: 0.6, rank: 1, tier: "S", appearances: 20, qualityScore: 0.7, updatedAt: 1 },
+  { wallet: "w2", name: "Doji", pnl: 80, winRate: 0.5, rank: 12, tier: "A", appearances: 15, qualityScore: 0.4, updatedAt: 1 },
+  { wallet: "w3", name: "Bull", pnl: 5, winRate: 0.4, rank: 40, tier: "B", appearances: 3, qualityScore: 0.15, updatedAt: 1 },
 ];
 
 function seed() {

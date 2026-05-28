@@ -1,6 +1,5 @@
 import type { DB } from "./storage/db.js";
 import type { BuyEvent, KolRecord, SafetyResult, SellEvent, Tier } from "./types.js";
-import { countDistinctByTier, distinctCount } from "./engine/confluenceEngine.js";
 import { detectSignalLevel, type SignalLevel } from "./engine/signalLevels.js";
 import { recordBuy, getBuysForTokenSince, countBuysByWalletToken } from "./storage/buyStore.js";
 import { alreadyAlerted } from "./storage/alertStore.js";
@@ -64,6 +63,13 @@ function kolViewFromRecord(k: KolRecord): KolView {
   return { name: k.name, rank: k.rank, tier: k.tier, winRate: k.winRate, pnl: k.pnl, appearances: k.appearances };
 }
 
+// Quality-weighted "weight" for a wallet — falls back to a small default for unknowns so
+// they still count toward confluence but won't single-handedly trigger a signal.
+function walletWeight(db: DB, wallet: string): number {
+  const k = getKol(db, wallet);
+  return k ? k.qualityScore : 0.1;
+}
+
 export async function processBuys(
   db: DB,
   buys: BuyEvent[],
@@ -86,11 +92,17 @@ export async function processBuys(
     buysSent++;
   }
 
-  // 2) Evaluate the signal ladder for each touched token.
+  // 2) Evaluate the weighted signal ladder for each touched token. Weight = sum of distinct
+  //    KOL quality scores within the window — so 1 elite + 1 strong can beat 3 weak ones.
   for (const mint of candidates) {
     const level = detectSignalLevel(deps.signalLevels, (w) => {
       const since = Date.now() - w * 60_000;
-      return distinctCount(countDistinctByTier(getBuysForTokenSince(db, mint, since)));
+      const distinctWallets = new Set(getBuysForTokenSince(db, mint, since).map((b) => b.kolWallet));
+      // A signal is consensus, not endorsement — require at least 2 distinct KOLs.
+      if (distinctWallets.size < 2) return 0;
+      let total = 0;
+      for (const wallet of distinctWallets) total += walletWeight(db, wallet);
+      return total;
     });
     if (!level) continue;
     if (alreadyAlerted(db, `${mint}#${level.level}`)) continue;

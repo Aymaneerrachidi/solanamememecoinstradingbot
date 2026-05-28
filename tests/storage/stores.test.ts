@@ -11,7 +11,8 @@ beforeEach(() => {
 });
 
 const kol: KolRecord = {
-  wallet: "w1", name: "alice", pnl: 100, winRate: 0.6, rank: 1, tier: "S", appearances: 5, updatedAt: 1,
+  wallet: "w1", name: "alice", pnl: 100, winRate: 0.6, rank: 1, tier: "S",
+  appearances: 5, qualityScore: 0.5, updatedAt: 1,
 };
 
 describe("kolStore", () => {

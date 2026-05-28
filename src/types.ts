@@ -7,7 +7,8 @@ export interface KolRecord {
   winRate: number;
   rank: number;
   tier: Tier;
-  appearances: number; // days seen on the leaderboard within the history window
+  appearances: number; // days seen on the daily leaderboard within the history window
+  qualityScore: number; // 0..1, derived from daily/weekly/monthly performance
   updatedAt: number;
 }
 

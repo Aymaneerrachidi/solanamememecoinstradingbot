@@ -57,14 +57,16 @@ export const config = {
     noBuysCycles: num("HEALTH_NO_BUYS_CYCLES", 30),
     muteMin: num("HEALTH_MUTE_MIN", 60),
   },
-  // Signal ladder: a token fires the STRONGEST level it qualifies for (distinct KOLs within
-  // the window). Each level alerts once per token, so a coin can re-alert as it climbs.
-  // Edit freely — order doesn't matter, `level` decides strength.
+  // Signal ladder: a token fires the STRONGEST level it qualifies for. We sum the
+  // QUALITY SCORE (0..1, derived from monthly+weekly+daily PnL and win rate) of the distinct
+  // KOLs that bought it within the window — so one elite KOL can outweigh several weak ones.
+  // Each level alerts once per token, so a coin can re-alert as it climbs.
+  // Edit freely — `level` decides strength ordering.
   signalLevels: [
-    { level: 1, label: "🟢 GOOD", minKols: 2, windowMin: 5 },
-    { level: 2, label: "🔵 STRONG", minKols: 4, windowMin: 15 },
-    { level: 3, label: "🟠 VERY STRONG", minKols: 4, windowMin: 5 },
-    { level: 4, label: "🔴 EXTREME", minKols: 6, windowMin: 15 },
+    { level: 1, label: "🟢 GOOD", minWeight: 0.8, windowMin: 15 },
+    { level: 2, label: "🔵 STRONG", minWeight: 1.5, windowMin: 15 },
+    { level: 3, label: "🟠 VERY STRONG", minWeight: 1.5, windowMin: 5 },
+    { level: 4, label: "🔴 EXTREME", minWeight: 2.5, windowMin: 15 },
   ],
   // Which tiers send a message on EVERY individual buy. Blank = off (only ladder signals).
   // e.g. "S" = ping only on top-tier whale buys; "S,A,B" = every buy.
