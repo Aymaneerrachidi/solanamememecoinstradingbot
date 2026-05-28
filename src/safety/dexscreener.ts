@@ -10,6 +10,8 @@ export interface DexData {
   symbol?: string;
   priceUsd?: number;
   marketCapUsd?: number;
+  fdvUsd?: number;
+  priceChangeH24?: number;
 }
 
 interface DexPair {
@@ -19,6 +21,7 @@ interface DexPair {
   fdv?: number;
   liquidity?: { usd?: number };
   volume?: { h24?: number };
+  priceChange?: { h24?: number };
   pairCreatedAt?: number; // unix ms
 }
 
@@ -45,5 +48,7 @@ export async function fetchDexData(tokenMint: string, now = Date.now()): Promise
     symbol: best.baseToken?.symbol,
     priceUsd: best.priceUsd ? Number(best.priceUsd) : undefined,
     marketCapUsd: best.marketCap ?? best.fdv,
+    fdvUsd: best.fdv,
+    priceChangeH24: best.priceChange?.h24,
   };
 }

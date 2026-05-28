@@ -28,8 +28,8 @@ const TIER_ORDER: Record<Tier, number> = { S: 3, A: 2, B: 1 };
 
 function kolView(db: DB, buy: BuyEvent): KolView {
   const k = getKol(db, buy.kolWallet);
-  if (k) return { name: k.name, rank: k.rank, tier: k.tier };
-  return { name: buy.kolWallet.slice(0, 6), rank: 0, tier: buy.tier };
+  if (k) return { name: k.name, rank: k.rank, tier: k.tier, winRate: k.winRate, pnl: k.pnl };
+  return { name: buy.kolWallet.slice(0, 6), rank: 0, tier: buy.tier, winRate: 0, pnl: 0 };
 }
 
 // Distinct KOL wallets that bought this token within the last `windowMin` minutes.

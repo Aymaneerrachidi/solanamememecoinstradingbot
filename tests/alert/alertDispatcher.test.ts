@@ -10,14 +10,15 @@ import type { SafetyResult } from "../../src/types.js";
 import type { DexData } from "../../src/safety/dexscreener.js";
 import type { SignalLevel } from "../../src/engine/signalLevels.js";
 
-const cented: KolView = { name: "Cented", rank: 1, tier: "S" };
-const doji: KolView = { name: "Doji", rank: 12, tier: "A" };
+const cented: KolView = { name: "Cented", rank: 1, tier: "S", winRate: 0.6, pnl: 286 };
+const doji: KolView = { name: "Doji", rank: 12, tier: "A", winRate: 0.43, pnl: 120 };
 const MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const level: SignalLevel = { level: 1, label: "🟢 GOOD", minKols: 2, windowMin: 5 };
 
 const info: DexData = {
   found: true, liquidityUsd: 50000, volume24hUsd: 80000, ageMinutes: 45,
   name: "Dogwifhat", symbol: "WIF", marketCapUsd: 1_200_000, priceUsd: 0.001,
+  priceChangeH24: 45,
 };
 
 const safety: SafetyResult = {
@@ -36,6 +37,9 @@ describe("formatBuy", () => {
     expect(msg).toContain("#1");
     expect(msg).toContain("WIF");
     expect(msg).toContain("$1.20M");
+    expect(msg).toContain("60% WR"); // KOL win rate
+    expect(msg).toContain("24h +45%"); // price change
+    expect(msg).toContain("gmgn.ai"); // trade link
     expect(msg).toContain(`<code>${MINT}</code>`);
     expect(msg).toContain("dexscreener.com");
   });
@@ -49,12 +53,14 @@ describe("formatSignal", () => {
     expect(msg).toContain("within 5 min");
     expect(msg).toContain("Cented");
     expect(msg).toContain("Doji");
-    expect(msg).toContain("$1.20M");
+    expect(msg).toContain("60% WR"); // per-KOL win rate
+    expect(msg).toContain("$200.0K"); // market cap from safety stats
+    expect(msg).toContain("gmgn.ai"); // quick links
     expect(msg).toContain(`<code>${MINT}</code>`);
   });
 
   it("escapes HTML-special characters in names", () => {
-    const evil: KolView = { name: "a<b>&c", rank: 5, tier: "B" };
+    const evil: KolView = { name: "a<b>&c", rank: 5, tier: "B", winRate: 0.2, pnl: 3 };
     const msg = formatSignal(MINT, [evil], level, safety, info);
     expect(msg).toContain("a&lt;b&gt;&amp;c");
   });
