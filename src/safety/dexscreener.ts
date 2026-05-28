@@ -1,4 +1,5 @@
 import { retry } from "../util/retry.js";
+import { recordFailure } from "../health/health.js";
 
 export interface DexData {
   liquidityUsd: number;
@@ -35,7 +36,13 @@ interface DexPair {
 
 export async function fetchDexData(tokenMint: string, now = Date.now()): Promise<DexData> {
   const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenMint}`;
-  const res = await retry(() => fetch(url), { attempts: 3, baseDelayMs: 300 });
+  let res: Response;
+  try {
+    res = await retry(() => fetch(url), { attempts: 3, baseDelayMs: 300 });
+  } catch (err) {
+    recordFailure("dexscreener");
+    throw err;
+  }
   const json = (await res.json()) as { pairs?: DexPair[] };
   const pairs = json.pairs ?? [];
   if (pairs.length === 0) {

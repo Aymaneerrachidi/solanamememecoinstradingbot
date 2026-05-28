@@ -1,4 +1,5 @@
 import { Connection, PublicKey } from "@solana/web3.js";
+import { recordFailure } from "../health/health.js";
 
 export interface OnchainData {
   mintAuthorityRevoked: boolean;
@@ -11,6 +12,15 @@ export async function fetchOnchainData(
   conn: Connection,
   tokenMint: string
 ): Promise<OnchainData> {
+  try {
+    return await fetchOnchainDataInner(conn, tokenMint);
+  } catch (err) {
+    recordFailure("rpc");
+    throw err;
+  }
+}
+
+async function fetchOnchainDataInner(conn: Connection, tokenMint: string): Promise<OnchainData> {
   const mint = new PublicKey(tokenMint);
 
   const supplyResp = await conn.getTokenSupply(mint);

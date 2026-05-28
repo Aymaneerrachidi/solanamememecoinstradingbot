@@ -1,5 +1,6 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { logger } from "../logger.js";
+import { recordFailure } from "../health/health.js";
 import type { BuyEvent, SellEvent, Tier } from "../types.js";
 
 // Tokens that don't represent a memecoin "buy" — receiving these usually means the KOL
@@ -134,6 +135,7 @@ export function createRpcMonitor(
             if (gapMs > 0) await sleep(gapMs);
           }
         } catch (err) {
+          recordFailure("rpc");
           logger.warn(`monitor poll failed for ${w.wallet}`, err);
         }
       }

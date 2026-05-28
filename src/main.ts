@@ -18,6 +18,7 @@ import { fetchRugData } from "./safety/rugcheck.js";
 import { fetchOnchainData } from "./safety/onchain.js";
 import { checkToken } from "./safety/safetyChecker.js";
 import { processBuys, processSells, checkMultipliers } from "./pipeline.js";
+import { alertKolScrape, noteBuysCycle, runHealthChecks } from "./health/health.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -45,10 +46,12 @@ async function main() {
       raw = await fetchRaw();
     } catch (err) {
       logger.warn("KOL scrape failed; keeping current list", err);
+      await alertKolScrape(tg, config.health.muteMin, "failed", err);
       return;
     }
     if (raw.length === 0) {
       logger.warn("KOL scrape returned 0; keeping current list");
+      await alertKolScrape(tg, config.health.muteMin, "empty");
       return;
     }
 
@@ -133,6 +136,9 @@ async function main() {
         trackDays: config.multiplierTrackDays,
       });
       for (const key of mult) logger.info(`📈 MULTIPLIER HIT: ${key}`);
+
+      noteBuysCycle(buyCount);
+      await runHealthChecks(tg, config.health);
     } catch (err) {
       logger.error("monitor loop error", err);
     }

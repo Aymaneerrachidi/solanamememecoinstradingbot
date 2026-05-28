@@ -48,6 +48,15 @@ export const config = {
   multiplierTrackDays: num("MULTIPLIER_TRACK_DAYS", 7),
   // Exit alert: distinct KOLs that must have sold a signaled coin before we ping.
   exitSellerThreshold: num("EXIT_SELLER_THRESHOLD", 2),
+  // Health alerts: ping Telegram when sustained failures are detected. Per-category mute
+  // prevents spam. Set a threshold to 0 to effectively disable that check.
+  health: {
+    dexscreenerErr: num("HEALTH_DEXSCREENER_ERR", 10),
+    rugcheckErr: num("HEALTH_RUGCHECK_ERR", 10),
+    rpcErr: num("HEALTH_RPC_ERR", 30),
+    noBuysCycles: num("HEALTH_NO_BUYS_CYCLES", 30),
+    muteMin: num("HEALTH_MUTE_MIN", 60),
+  },
   // Signal ladder: a token fires the STRONGEST level it qualifies for (distinct KOLs within
   // the window). Each level alerts once per token, so a coin can re-alert as it climbs.
   // Edit freely — order doesn't matter, `level` decides strength.
