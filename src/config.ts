@@ -46,6 +46,10 @@ export const config = {
   // Which tiers send a message on EVERY individual buy. Blank = off (only ladder signals).
   // e.g. "S" = ping only on top-tier whale buys; "S,A,B" = every buy.
   individualBuyTiers: tierSet("INDIVIDUAL_BUY_TIERS"),
+  // KOL list is built from accumulated daily snapshots over this window (weekly+monthly
+  // consistency), capped to the strongest `maxKols` to bound monitoring load.
+  kolHistoryDays: num("KOL_HISTORY_DAYS", 30),
+  maxKols: num("MAX_KOLS", 75),
   monitorIntervalSec: num("MONITOR_INTERVAL_SEC", 8),
   // Gap between per-wallet Helius requests to stay under the free-tier rate limit.
   monitorRequestGapMs: num("MONITOR_REQUEST_GAP_MS", 150),

@@ -1,26 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { retry } from "../util/retry.js";
-import { logger } from "../logger.js";
-import { classifyAll, type RawKol, type TierCutoffs } from "./classify.js";
-import type { KolRecord } from "../types.js";
-
-export interface LoadKolsArgs {
-  fetchRaw: () => Promise<RawKol[]>;
-  cutoffs: TierCutoffs;
-  now: number;
-  previous?: KolRecord[];
-}
-
-export async function loadKols(args: LoadKolsArgs): Promise<KolRecord[]> {
-  try {
-    const raw = await args.fetchRaw();
-    if (raw.length === 0) throw new Error("empty KOL list");
-    return classifyAll(raw, args.cutoffs, args.now);
-  } catch (err) {
-    logger.warn("KOL fetch failed; keeping previous list", err);
-    return args.previous ?? [];
-  }
-}
+import type { RawKol } from "./classify.js";
 
 // Source: a manual JSON file of RawKol objects.
 export function manualFetcher(path: string): () => Promise<RawKol[]> {

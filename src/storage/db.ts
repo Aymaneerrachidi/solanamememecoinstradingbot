@@ -27,6 +27,16 @@ export function openDb(path: string): DB {
       tokenMint TEXT PRIMARY KEY,
       ts INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS kol_snapshots (
+      wallet TEXT NOT NULL,
+      name TEXT NOT NULL,
+      pnl REAL NOT NULL,
+      winRate REAL NOT NULL,
+      rank INTEGER NOT NULL,
+      day INTEGER NOT NULL,
+      PRIMARY KEY (wallet, day)
+    );
+    CREATE INDEX IF NOT EXISTS idx_snap_day ON kol_snapshots (day);
   `);
   return db;
 }

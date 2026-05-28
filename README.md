@@ -6,8 +6,12 @@ tokens, runs strict anti-rug / anti-dead-coin safety gates, and sends Telegram a
 
 ## How it works
 
-1. **Scrape** — pulls the kolscan leaderboard (or a manual list), classifies KOLs into
-   tiers **S / A / B** by PnL rank.
+1. **Scrape + consistency** — pulls the kolscan leaderboard daily and stores a snapshot.
+   The tracked KOL list is rebuilt from accumulated history (`KOL_HISTORY_DAYS`): KOLs are
+   ranked by a recency-weighted consistency score (showing up across days/weeks/months beats
+   a one-day fluke), capped to the strongest `MAX_KOLS`, then split into **S / A / B** tiers.
+   (kolscan's own weekly/monthly leaderboards are behind an auth-only API, so consistency is
+   derived from our own daily history.)
 2. **Monitor** — polls each tracked wallet via Helius (standard RPC) for token buys.
 3. **Signal ladder** — fires the strongest level a coin qualifies for, based on how many
    distinct KOLs buy it within a window (default: 🟢 2/5min, 🔵 4/15min, 🟠 4/5min,

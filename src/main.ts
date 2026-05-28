@@ -3,7 +3,14 @@ import { config } from "./config.js";
 import { logger } from "./logger.js";
 import { openDb } from "./storage/db.js";
 import { getAllKols, replaceKols } from "./storage/kolStore.js";
-import { loadKols, manualFetcher, kolscanFetcher } from "./scraper/kolScraper.js";
+import { manualFetcher, kolscanFetcher } from "./scraper/kolScraper.js";
+import {
+  recordSnapshot,
+  getSnapshotsSince,
+  pruneSnapshots,
+  epochDay,
+} from "./storage/snapshotStore.js";
+import { scoreConsistency, buildKolList } from "./engine/consistency.js";
 import { createRpcMonitor, type WatchedWallet } from "./monitor/walletMonitor.js";
 import { createTelegramClient } from "./alert/telegram.js";
 import { fetchDexData } from "./safety/dexscreener.js";
@@ -28,15 +35,35 @@ async function main() {
     ? manualFetcher(config.kolManualListPath)
     : kolscanFetcher();
 
+  // Pulls today's kolscan leaderboard, stores it as a daily snapshot, then rebuilds the
+  // tracked list from accumulated history (weekly + monthly consistency, recent-weighted).
   async function refreshKols() {
-    const previous = getAllKols(db);
-    const kols = await loadKols({ fetchRaw, cutoffs: config.tiers, now: Date.now(), previous });
-    if (kols.length > 0) {
-      replaceKols(db, kols);
-      logger.info(`loaded ${kols.length} KOLs`);
-    } else {
-      logger.warn("no KOLs available");
+    const now = Date.now();
+    const today = epochDay(now);
+    let raw;
+    try {
+      raw = await fetchRaw();
+    } catch (err) {
+      logger.warn("KOL scrape failed; keeping current list", err);
+      return;
     }
+    if (raw.length === 0) {
+      logger.warn("KOL scrape returned 0; keeping current list");
+      return;
+    }
+
+    recordSnapshot(db, raw, today);
+    pruneSnapshots(db, today - config.kolHistoryDays);
+
+    const snaps = getSnapshotsSince(db, today - config.kolHistoryDays);
+    const scored = scoreConsistency(snaps, today, raw.length);
+    const kols = buildKolList(scored, config.tiers, now, config.maxKols);
+    replaceKols(db, kols);
+
+    const days = new Set(snaps.map((s) => s.day)).size;
+    logger.info(
+      `KOLs refreshed: tracking ${kols.length} (from ${scored.length} seen over ${days} day(s) of history)`
+    );
   }
 
   await refreshKols();
